@@ -1,0 +1,16 @@
+{
+  "name": "alias-maker",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "test": "bun test",
+    "lint": "bun run build && web-ext lint -s dist/firefox"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "playwright": "latest",
+    "web-ext": "latest"
+  }
+}

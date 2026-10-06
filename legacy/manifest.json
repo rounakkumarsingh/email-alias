@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Alias Maker",
+  "version": "1.0.0",
+  "description": "Make tag.random@yourdomain aliases and fill them into signup forms.",
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "clipboardWrite"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "New alias"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+E" },
+      "description": "Open Alias Maker"
+    }
+  }
+}

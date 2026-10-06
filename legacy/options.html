@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Alias Maker settings</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body { width: auto; max-width: 420px; }
+    main { padding: 20px; }
+    h1 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+    .field { margin-bottom: 14px; }
+    .note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Alias Maker settings</h1>
+    <label class="field">
+      <span>Domain</span>
+      <input id="domain" spellcheck="false" placeholder="rounakkumarsingh.com">
+      <p class="note">Aliases are made as tag.random@ this domain.</p>
+    </label>
+    <label class="field">
+      <span>Random part length</span>
+      <input id="length" type="number" min="5" max="12">
+      <p class="note">6 characters gives about 890 million combinations.</p>
+    </label>
+    <button id="save" class="primary" type="button">Save settings</button>
+    <p id="status" class="status" role="status"></p>
+  </main>
+  <script src="alias.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
