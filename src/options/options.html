@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alias Maker settings</title>
+  <link rel="stylesheet" href="../ui.css">
+</head>
+<body class="page">
+  <main>
+    <h1>Alias Maker</h1>
+
+    <section aria-labelledby="h-settings">
+      <h2 id="h-settings">Settings</h2>
+      <form id="settings" class="form-grid" novalidate>
+        <label class="field">
+          <span>Domain</span>
+          <input id="domain" autocomplete="off" spellcheck="false" aria-describedby="e-domain">
+          <p class="error" id="e-domain"></p>
+        </label>
+        <label class="field">
+          <span>Random part length (5 to 12)</span>
+          <input id="length" type="number" min="5" max="12" aria-describedby="e-length">
+          <p class="error" id="e-length"></p>
+        </label>
+        <label class="field">
+          <span>Fixed addresses (one per line)</span>
+          <textarea id="fixed" rows="3" spellcheck="false" aria-describedby="e-fixed"></textarea>
+          <p class="hint">Delivered normally, never labelled or sent to spam.</p>
+          <p class="error" id="e-fixed"></p>
+        </label>
+        <label class="field">
+          <span>Category tags (comma or line separated)</span>
+          <input id="categories" spellcheck="false" aria-describedby="e-categories">
+          <p class="hint">Shown as quick chips in the popup, e.g. fin, govt.</p>
+          <p class="error" id="e-categories"></p>
+        </label>
+        <label class="field">
+          <span>Spam folder name</span>
+          <input id="spamFolder" spellcheck="false" aria-describedby="e-spamFolder">
+          <p class="error" id="e-spamFolder"></p>
+        </label>
+        <div class="toolbar">
+          <button class="primary" type="submit">Save settings</button>
+          <span id="settings-status" class="status" role="status"></span>
+        </div>
+      </form>
+    </section>
+
+    <section aria-labelledby="h-registry">
+      <h2 id="h-registry">Alias registry</h2>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search aliases, sites, notes" aria-label="Search registry" spellcheck="false">
+        <button id="export" type="button">Export JSON</button>
+        <button id="import" type="button">Import JSON</button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <p id="registry-status" class="status" role="status"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Alias</th><th>Site</th><th>Created</th><th>Status</th><th>Note</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-sieve">
+      <h2 id="h-sieve">Proton filter script <span id="stale" class="badge" hidden>Out of date</span></h2>
+      <ol class="steps">
+        <li>Copy the script below.</li>
+        <li>In Proton Mail open Settings &rarr; Filters &rarr; Add filter &rarr; Add Sieve filter.</li>
+        <li>Paste it, name the filter, and save. Replace the old script each time you block an alias.</li>
+        <li>Create a label in Proton for every tag listed below. Proton does not create labels for you.</li>
+      </ol>
+      <div class="toolbar">
+        <button id="copy-script" class="primary" type="button">Copy full script</button>
+        <span id="sieve-status" class="status" role="status"></span>
+      </div>
+      <pre class="script" id="script" tabindex="0" aria-label="Generated Sieve script"></pre>
+      <h2>Labels to create in Proton</h2>
+      <div class="tag-list" id="labels"></div>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
