@@ -1,4 +1,5 @@
 import { isValidDomain, sanitizeTag, MAX_TAG } from "./alias.js";
+import { LABEL_MODES } from "./labels.js";
 
 export const DEFAULTS = {
   domain: "rounakkumarsingh.com",
@@ -6,7 +7,7 @@ export const DEFAULTS = {
   fixed: ["hello@rounakkumarsingh.com", "rounak@rounakkumarsingh.com"],
   categories: ["fin", "govt"],
   spamFolder: "Spam",
-  autoLabels: false,
+  labelMode: "manual",
 };
 
 const EMAIL = /^[a-z0-9._+-]+@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -47,7 +48,9 @@ export function validateSettings(raw) {
   else if (/["\\\u0000-\u001f]|\$\{/.test(spam)) errors.spamFolder = 'The name can\'t contain ", \\, ${ or control characters.';
   value.spamFolder = spam;
 
-  value.autoLabels = raw.autoLabels === true;
+  const mode = raw.labelMode ?? DEFAULTS.labelMode;
+  if (!LABEL_MODES.includes(mode)) errors.labelMode = "Choose Manual or Bridge linker.";
+  value.labelMode = mode;
 
   return { ok: Object.keys(errors).length === 0, errors, value };
 }

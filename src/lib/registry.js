@@ -54,8 +54,8 @@ export function tagsOf(registry) {
   return [...new Set(registry.map((e) => e.tag))].sort();
 }
 
-export function exportRegistry(registry, now = () => new Date().toISOString()) {
-  return JSON.stringify({ app: "alias-maker", version: REGISTRY_VERSION, exported: now(), entries: registry }, null, 2);
+export function exportRegistry(registry, now = () => new Date().toISOString(), labels = {}) {
+  return JSON.stringify({ app: "alias-maker", version: REGISTRY_VERSION, exported: now(), entries: registry, labels }, null, 2);
 }
 
 function normaliseEntry(raw) {

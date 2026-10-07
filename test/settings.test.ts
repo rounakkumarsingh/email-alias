@@ -31,11 +31,3 @@ describe("validateSettings", () => {
   }
   test("spam folder with spaces ok", () => expect(ok({ spamFolder: "Junk Mail" }).ok).toBe(true));
 });
-
-describe("autoLabels", () => {
-  test("only literal true enables it", () => {
-    expect(ok({ autoLabels: true }).value.autoLabels).toBe(true);
-    expect(ok({ autoLabels: "yes" }).value.autoLabels).toBe(false);
-    expect(ok({}).value.autoLabels).toBe(false);
-  });
-});

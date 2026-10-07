@@ -1,5 +1,6 @@
 import { api } from "./browser.js";
 import { DEFAULTS, validateSettings } from "./settings.js";
+import { reconcile } from "./labels.js";
 
 export async function getSettings() {
   const stored = await api.storage.sync.get(DEFAULTS);
@@ -39,4 +40,21 @@ export async function getLinkerStatus() {
 
 export async function setLinkerStatus({ ok, message }) {
   await api.storage.local.set({ linkerStatus: { ok, message, at: new Date().toISOString() } });
+}
+
+export async function getLabels() {
+  const { labels = {} } = await api.storage.local.get("labels");
+  return labels;
+}
+
+export async function saveLabels(labels) {
+  await api.storage.local.set({ labels });
+}
+
+// Label statuses with every registry and category tag present (new tags start as needs-creating).
+export async function syncedLabels() {
+  const [labels, registry, settings] = await Promise.all([getLabels(), getRegistry(), getSettings()]);
+  const next = reconcile(labels, registry, settings.categories);
+  if (next !== labels) await saveLabels(next);
+  return next;
 }
