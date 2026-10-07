@@ -1,6 +1,5 @@
 import { api } from "./browser.js";
 import { DEFAULTS, validateSettings } from "./settings.js";
-import { addEntry } from "./registry.js";
 
 export async function getSettings() {
   const stored = await api.storage.sync.get(DEFAULTS);
@@ -24,12 +23,6 @@ export async function saveRegistry(registry) {
   await api.storage.local.set({ registry });
 }
 
-export async function remember(alias, site) {
-  const next = addEntry(await getRegistry(), { alias, site });
-  await saveRegistry(next);
-  return next;
-}
-
 export async function getLastCopiedHash() {
   const { lastCopiedHash = "" } = await api.storage.local.get("lastCopiedHash");
   return lastCopiedHash;
@@ -37,4 +30,13 @@ export async function getLastCopiedHash() {
 
 export async function setLastCopiedHash(hash) {
   await api.storage.local.set({ lastCopiedHash: hash });
+}
+
+export async function getLinkerStatus() {
+  const { linkerStatus = null } = await api.storage.local.get("linkerStatus");
+  return linkerStatus;
+}
+
+export async function setLinkerStatus({ ok, message }) {
+  await api.storage.local.set({ linkerStatus: { ok, message, at: new Date().toISOString() } });
 }

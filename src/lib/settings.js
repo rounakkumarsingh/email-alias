@@ -6,6 +6,7 @@ export const DEFAULTS = {
   fixed: ["hello@rounakkumarsingh.com", "rounak@rounakkumarsingh.com"],
   categories: ["fin", "govt"],
   spamFolder: "Spam",
+  autoLabels: false,
 };
 
 const EMAIL = /^[a-z0-9._+-]+@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -45,6 +46,8 @@ export function validateSettings(raw) {
   if (!spam || spam.length > 100) errors.spamFolder = "Enter a folder or label name (up to 100 characters).";
   else if (/["\\\u0000-\u001f]|\$\{/.test(spam)) errors.spamFolder = 'The name can\'t contain ", \\, ${ or control characters.';
   value.spamFolder = spam;
+
+  value.autoLabels = raw.autoLabels === true;
 
   return { ok: Object.keys(errors).length === 0, errors, value };
 }

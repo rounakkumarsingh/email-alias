@@ -2,7 +2,8 @@ import { api } from "../lib/browser.js";
 import { buildAlias, randomPart, sanitizeTag, tagFromHost } from "../lib/alias.js";
 import { fillInTab } from "../lib/fill.js";
 import { search, setStatus } from "../lib/registry.js";
-import { getRegistry, getSettings, remember, saveRegistry } from "../lib/storage.js";
+import { getRegistry, getSettings, saveRegistry } from "../lib/storage.js";
+import { recordAlias } from "../lib/record.js";
 import { sieveState } from "../lib/sieve-state.js";
 
 const $ = (id) => document.getElementById(id);
@@ -88,7 +89,7 @@ async function copyAlias() {
   const alias = currentAlias();
   if (!alias) return;
   await navigator.clipboard.writeText(alias);
-  await remember(alias, host);
+  await recordAlias(alias, host);
   say("Copied. Paste it into the signup form.");
   await renderList();
 }
@@ -99,17 +100,17 @@ async function fillAlias() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   try {
     if (await fillInTab(tab.id, alias)) {
-      await remember(alias, host);
+      await recordAlias(alias, host);
       say("Filled. 1Password will offer to save the login when you sign up.");
       await renderList();
       return;
     }
     await navigator.clipboard.writeText(alias);
-    await remember(alias, host);
+    await recordAlias(alias, host);
     say("No email field found on this page. Alias copied instead.", "err");
   } catch {
     await navigator.clipboard.writeText(alias);
-    await remember(alias, host);
+    await recordAlias(alias, host);
     say("This page can't be filled. Alias copied instead.", "err");
   }
   await renderList();

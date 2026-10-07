@@ -1,7 +1,8 @@
 import { api } from "./lib/browser.js";
 import { buildAlias, randomPart, tagFromHost } from "./lib/alias.js";
 import { fillInTab } from "./lib/fill.js";
-import { getSettings, remember } from "./lib/storage.js";
+import { getSettings } from "./lib/storage.js";
+import { recordAlias } from "./lib/record.js";
 
 const MENU_ID = "alias-fill";
 
@@ -27,7 +28,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   const alias = buildAlias(tagFromHost(host) || "site", randomPart(settings.length), settings.domain);
 
   try {
-    if (await fillInTab(tab.id, alias, info.frameId)) await remember(alias, host);
+    if (await fillInTab(tab.id, alias, info.frameId)) await recordAlias(alias, host);
   } catch (err) {
     console.warn("Alias Maker could not fill this field:", err);
   }

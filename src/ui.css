@@ -168,3 +168,6 @@ td input { height: 28px; font: 12px var(--sans); }
 pre.script { margin: 10px 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; font: 12px/1.5 var(--mono); }
 ol.steps { margin: 8px 0 0; padding-left: 20px; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.check input { width: auto; height: auto; }
+code { font-family: var(--mono); }

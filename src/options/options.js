@@ -1,6 +1,7 @@
 import { exportRegistry, mergeRegistry, parseImport, removeEntry, search, setNote, setStatus, tagsOf } from "../lib/registry.js";
 import { validateSettings } from "../lib/settings.js";
-import { getRegistry, getSettings, saveRegistry, saveSettings } from "../lib/storage.js";
+import { getLinkerStatus, getRegistry, getSettings, saveRegistry, saveSettings, setLinkerStatus } from "../lib/storage.js";
+import { ping, syncAll } from "../lib/linker.js";
 import { copyScript, sieveState } from "../lib/sieve-state.js";
 
 const $ = (id) => document.getElementById(id);
@@ -18,11 +19,12 @@ async function loadSettings() {
   $("fixed").value = s.fixed.join("\n");
   $("categories").value = s.categories.join(", ");
   $("spamFolder").value = s.spamFolder;
+  $("autoLabels").checked = s.autoLabels;
 }
 
 $("settings").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  const raw = Object.fromEntries(FIELDS.map((f) => [f, $(f).value]));
+  const raw = { ...Object.fromEntries(FIELDS.map((f) => [f, $(f).value])), autoLabels: $("autoLabels").checked };
   const { ok, errors, value } = validateSettings(raw);
   for (const f of FIELDS) {
     $("e-" + f).textContent = errors[f] || "";
@@ -165,3 +167,33 @@ $("import-file").addEventListener("change", async (ev) => {
 
 
 loadSettings().then(renderAll);
+
+// ---- Proton label linker ----
+
+async function showLinkerStatus() {
+  const st = await getLinkerStatus();
+  if (!st) return say("linker-status", "Not used yet.");
+  say("linker-status", `${st.message} (${new Date(st.at).toLocaleString()})`, st.ok ? "ok" : "err");
+}
+
+async function runLinker(action, button) {
+  button.disabled = true;
+  say("linker-status", "Working...");
+  try {
+    const message = await action();
+    await setLinkerStatus({ ok: true, message });
+  } catch (err) {
+    await setLinkerStatus({ ok: false, message: err.message });
+  }
+  button.disabled = false;
+  await showLinkerStatus();
+}
+
+$("autoLabels").addEventListener("change", async () => {
+  await saveSettings({ ...(await getSettings()), autoLabels: $("autoLabels").checked });
+});
+$("sync-labels").addEventListener("click", (e) =>
+  runLinker(async () => (await syncAll(await getRegistry())).message, e.currentTarget));
+$("check-linker").addEventListener("click", (e) => runLinker(() => ping(), e.currentTarget));
+
+showLinkerStatus();

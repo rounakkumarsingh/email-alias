@@ -77,8 +77,19 @@
         <span id="sieve-status" class="status" role="status"></span>
       </div>
       <pre class="script" id="script" tabindex="0" aria-label="Generated Sieve script"></pre>
-      <h2>Labels to create in Proton</h2>
+      <h2>Labels in your registry</h2>
       <div class="tag-list" id="labels"></div>
+    </section>
+
+    <section aria-labelledby="h-linker">
+      <h2 id="h-linker">Proton label linker</h2>
+      <p class="hint">Creates the Proton label for each new tag through Proton Bridge, using the native host from <code>native/install.sh</code>. Alias creation works whether or not this is on.</p>
+      <label class="check"><input type="checkbox" id="autoLabels"> Create Proton labels automatically</label>
+      <div class="toolbar">
+        <button id="sync-labels" type="button">Sync labels</button>
+        <button id="check-linker" type="button">Check connection</button>
+      </div>
+      <p id="linker-status" class="status" role="status"></p>
     </section>
   </main>
   <script src="options.js"></script>

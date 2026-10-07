@@ -13,12 +13,17 @@ const entries = [
 
 const base = await Bun.file(join(src, "manifest.base.json")).json();
 
+const chromeKey = (await Bun.file(join(root, "native/chrome-key.txt")).text()).trim();
+
 function manifestFor(browser: "chrome" | "firefox") {
+  const permissions = [...base.permissions, "nativeMessaging"];
   if (browser === "chrome") {
-    return { ...base, background: { service_worker: "background.js" } };
+    // The pinned key keeps the extension ID stable so native/install.sh can allow-list it.
+    return { ...base, permissions, key: chromeKey, background: { service_worker: "background.js" } };
   }
   return {
     ...base,
+    permissions,
     background: { scripts: ["background.js"] },
     browser_specific_settings: {
       gecko: {
