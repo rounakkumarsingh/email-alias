@@ -1,11 +1,15 @@
 import { exportRegistry, mergeRegistry, parseImport, removeEntry, search, setNote, setStatus, tagsOf } from "../lib/registry.js";
 import { validateSettings } from "../lib/settings.js";
-import { getLinkerStatus, getRegistry, getSettings, saveRegistry, saveSettings, setLinkerStatus } from "../lib/storage.js";
-import { ping, syncAll } from "../lib/linker.js";
+import { getLabels, getLinkerStatus, getRegistry, getSettings, saveLabels, saveRegistry, saveSettings, setLinkerStatus, syncedLabels } from "../lib/storage.js";
+import { CREATED, markCreated, mergeLabels, NEEDS, parseLabels, pendingTags, setLabelStatus, tagList } from "../lib/labels.js";
+import { switchLabelMode } from "../lib/modeswitch.js";
+import { ensureLabels, ping } from "../lib/linker.js";
 import { copyScript, sieveState } from "../lib/sieve-state.js";
 
 const $ = (id) => document.getElementById(id);
-const FIELDS = ["domain", "length", "fixed", "categories", "spamFolder"];
+const TEXT_FIELDS = ["domain", "length", "fixed", "categories", "spamFolder"];
+const FIELDS = [...TEXT_FIELDS, "labelMode"];
+const selectedMode = () => document.querySelector("input[name=labelMode]:checked")?.value;
 
 function say(id, message, kind = "ok") {
   $(id).textContent = message;
@@ -19,12 +23,13 @@ async function loadSettings() {
   $("fixed").value = s.fixed.join("\n");
   $("categories").value = s.categories.join(", ");
   $("spamFolder").value = s.spamFolder;
-  $("autoLabels").checked = s.autoLabels;
+  for (const r of document.querySelectorAll("input[name=labelMode]")) r.checked = r.value === s.labelMode;
+  $("linker").hidden = s.labelMode !== "bridge";
 }
 
 $("settings").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  const raw = { ...Object.fromEntries(FIELDS.map((f) => [f, $(f).value])), autoLabels: $("autoLabels").checked };
+  const raw = { ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, $(f).value])), labelMode: selectedMode() };
   const { ok, errors, value } = validateSettings(raw);
   for (const f of FIELDS) {
     $("e-" + f).textContent = errors[f] || "";
@@ -35,10 +40,22 @@ $("settings").addEventListener("submit", async (ev) => {
     $(FIELDS.find((f) => errors[f])).focus();
     return;
   }
+  const previous = await getSettings();
   await saveSettings(value);
   say("settings-status", "Settings saved.");
   await loadSettings();
-  await renderSieve();
+
+  // Switching to Bridge creates every label still marked "needs creating".
+  const sw = await switchLabelMode({
+    from: previous.labelMode, to: value.labelMode, labels: await syncedLabels(),
+    ensure: (names) => ensureLabels(names),
+  });
+  if (sw.ran) {
+    await saveLabels(sw.labels);
+    await setLinkerStatus({ ok: sw.ok, message: sw.message });
+    await showLinkerStatus();
+  }
+  await renderAll();
 });
 
 async function renderRegistry() {
@@ -103,17 +120,6 @@ async function renderRegistry() {
     tr.append(noteTd, actions);
     rows.append(tr);
   }
-
-  const labels = $("labels");
-  labels.replaceChildren();
-  const tags = tagsOf(registry);
-  if (!tags.length) labels.textContent = "None yet.";
-  for (const t of tags) {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = t;
-    labels.append(chip);
-  }
 }
 
 async function renderSieve() {
@@ -123,8 +129,57 @@ async function renderSieve() {
   $("stale").textContent = s.neverCopied ? "Not copied yet" : "Out of date";
 }
 
+async function renderLabels() {
+  const labels = await syncedLabels();
+  const pending = pendingTags(labels);
+  const badge = $("labels-badge");
+  badge.hidden = pending.length === 0;
+  badge.textContent = `${pending.length} still need${pending.length === 1 ? "s" : ""} creating`;
+
+  const rows = $("label-rows");
+  rows.replaceChildren();
+  for (const { tag, status } of tagList(labels)) {
+    const tr = document.createElement("tr");
+    const name = document.createElement("td");
+    name.className = "mono";
+    name.textContent = tag;
+
+    const st = document.createElement("td");
+    const pill = document.createElement("span");
+    const done = status === CREATED;
+    pill.className = "pill" + (done ? " done" : "");
+    pill.textContent = done ? "Created" : "Needs creating";
+    st.append(pill);
+
+    const actions = document.createElement("td");
+    const btn = (label, fn) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "small";
+      b.textContent = label;
+      b.setAttribute("aria-label", `${label}: ${tag}`);
+      b.addEventListener("click", fn);
+      return b;
+    };
+    actions.append(
+      btn(done ? "Mark as needs creating" : "Mark created", async () => {
+        await saveLabels(setLabelStatus(await getLabels(), tag, done ? NEEDS : CREATED));
+        await renderLabels();
+      }),
+      " ",
+      btn("Copy name", async () => {
+        await navigator.clipboard.writeText(tag);
+        say("labels-status", `Copied "${tag}".`);
+      }),
+    );
+    tr.append(name, st, actions);
+    rows.append(tr);
+  }
+}
+
 async function renderAll() {
   await renderRegistry();
+  await renderLabels();
   await renderSieve();
 }
 
@@ -141,7 +196,7 @@ $("copy-script").addEventListener("click", async () => {
 });
 
 $("export").addEventListener("click", async () => {
-  const blob = new Blob([exportRegistry(await getRegistry())], { type: "application/json" });
+  const blob = new Blob([exportRegistry(await getRegistry(), undefined, await syncedLabels())], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `alias-registry-${new Date().toISOString().slice(0, 10)}.json`;
@@ -155,9 +210,12 @@ $("import-file").addEventListener("change", async (ev) => {
   ev.target.value = "";
   if (!file) return;
   try {
-    const incoming = parseImport(await file.text());
+    const text = await file.text();
+    const incoming = parseImport(text);
+    const incomingLabels = parseLabels(JSON.parse(text).labels);
     const { registry, added, changed } = mergeRegistry(await getRegistry(), incoming);
     await saveRegistry(registry);
+    await saveLabels(mergeLabels(await getLabels(), incomingLabels));
     say("registry-status", `Imported: ${added} added, ${changed} updated.`);
     await renderAll();
   } catch (err) {
@@ -189,11 +247,14 @@ async function runLinker(action, button) {
   await showLinkerStatus();
 }
 
-$("autoLabels").addEventListener("change", async () => {
-  await saveSettings({ ...(await getSettings()), autoLabels: $("autoLabels").checked });
-});
 $("sync-labels").addEventListener("click", (e) =>
-  runLinker(async () => (await syncAll(await getRegistry())).message, e.currentTarget));
+  runLinker(async () => {
+    const labels = await syncedLabels();
+    const r = await ensureLabels([...new Set([...tagsOf(await getRegistry()), ...pendingTags(labels)])].sort());
+    await saveLabels(markCreated(labels, [...r.created, ...r.existing]));
+    await renderLabels();
+    return r.message;
+  }, e.currentTarget));
 $("check-linker").addEventListener("click", (e) => runLinker(() => ping(), e.currentTarget));
 
 showLinkerStatus();

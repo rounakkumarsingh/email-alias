@@ -2,7 +2,8 @@ import { api } from "../lib/browser.js";
 import { buildAlias, randomPart, sanitizeTag, tagFromHost } from "../lib/alias.js";
 import { fillInTab } from "../lib/fill.js";
 import { search, setStatus } from "../lib/registry.js";
-import { getRegistry, getSettings, saveRegistry } from "../lib/storage.js";
+import { getLabels, getRegistry, getSettings, saveLabels, saveRegistry, syncedLabels } from "../lib/storage.js";
+import { markCreated, NEEDS } from "../lib/labels.js";
 import { recordAlias } from "../lib/record.js";
 import { sieveState } from "../lib/sieve-state.js";
 
@@ -85,6 +86,18 @@ async function renderStale() {
   $("stale").hidden = !s.stale || s.neverCopied;
 }
 
+// Manual mode: remind the user to create the Proton label for a tag that still needs one.
+async function showLabelNotice(tag) {
+  const notice = $("label-notice");
+  notice.hidden = true;
+  if (!tag || settings.labelMode !== "manual") return;
+  const labels = await syncedLabels();
+  if (labels[tag]?.status !== NEEDS) return;
+  $("notice-tag").textContent = tag;
+  notice.dataset.tag = tag;
+  notice.hidden = false;
+}
+
 async function copyAlias() {
   const alias = currentAlias();
   if (!alias) return;
@@ -92,6 +105,7 @@ async function copyAlias() {
   await recordAlias(alias, host);
   say("Copied. Paste it into the signup form.");
   await renderList();
+  await showLabelNotice(currentTag());
 }
 
 async function fillAlias() {
@@ -103,6 +117,7 @@ async function fillAlias() {
       await recordAlias(alias, host);
       say("Filled. 1Password will offer to save the login when you sign up.");
       await renderList();
+      await showLabelNotice(currentTag());
       return;
     }
     await navigator.clipboard.writeText(alias);
@@ -114,6 +129,7 @@ async function fillAlias() {
     say("This page can't be filled. Alias copied instead.", "err");
   }
   await renderList();
+  await showLabelNotice(currentTag());
 }
 
 async function init() {
@@ -161,6 +177,16 @@ async function init() {
   $("fill").addEventListener("click", fillAlias);
   $("copy").addEventListener("click", copyAlias);
   $("search").addEventListener("input", renderList);
+  $("notice-copy").addEventListener("click", async () => {
+    await navigator.clipboard.writeText($("label-notice").dataset.tag);
+    say("Label name copied.");
+  });
+  $("notice-done").addEventListener("click", async () => {
+    const tag = $("label-notice").dataset.tag;
+    await saveLabels(markCreated(await getLabels(), [tag]));
+    $("label-notice").hidden = true;
+    say(`Marked "${tag}" as created.`);
+  });
   for (const id of ["open-options", "stale"]) {
     $(id).addEventListener("click", (e) => {
       e.preventDefault();

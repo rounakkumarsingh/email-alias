@@ -40,6 +40,13 @@
           <input id="spamFolder" spellcheck="false" aria-describedby="e-spamFolder">
           <p class="error" id="e-spamFolder"></p>
         </label>
+        <fieldset class="field" id="labelMode" aria-describedby="e-labelMode">
+          <legend>Proton labels</legend>
+          <label class="check"><input type="radio" name="labelMode" value="manual"> Manual: I create labels in Proton myself (no Bridge needed)</label>
+          <label class="check"><input type="radio" name="labelMode" value="bridge"> Bridge linker: create labels through Proton Bridge (needs a paid plan)</label>
+          <p class="hint">Switching to Bridge creates every label still marked "needs creating".</p>
+          <p class="error" id="e-labelMode"></p>
+        </fieldset>
         <div class="toolbar">
           <button class="primary" type="submit">Save settings</button>
           <span id="settings-status" class="status" role="status"></span>
@@ -64,27 +71,36 @@
       </div>
     </section>
 
+    <section aria-labelledby="h-labels">
+      <h2 id="h-labels">Labels <span id="labels-badge" class="pill" hidden></span></h2>
+      <p class="hint">The Sieve filter files mail under a label named after the tag, and Proton only files into labels that exist. Create each label in Proton (Settings &rarr; Folders and labels), then mark it created here. Category tags are listed from the start.</p>
+      <p id="labels-status" class="status" role="status"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tag</th><th>Status</th><th></th></tr></thead>
+          <tbody id="label-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section aria-labelledby="h-sieve">
       <h2 id="h-sieve">Proton filter script <span id="stale" class="badge" hidden>Out of date</span></h2>
       <ol class="steps">
         <li>Copy the script below.</li>
         <li>In Proton Mail open Settings &rarr; Filters &rarr; Add filter &rarr; Add Sieve filter.</li>
         <li>Paste it, name the filter, and save. Replace the old script each time you block an alias.</li>
-        <li>Create a label in Proton for every tag listed below. Proton does not create labels for you.</li>
+        <li>Create a label in Proton for every tag in the Labels section above. Proton does not create labels for you.</li>
       </ol>
       <div class="toolbar">
         <button id="copy-script" class="primary" type="button">Copy full script</button>
         <span id="sieve-status" class="status" role="status"></span>
       </div>
       <pre class="script" id="script" tabindex="0" aria-label="Generated Sieve script"></pre>
-      <h2>Labels in your registry</h2>
-      <div class="tag-list" id="labels"></div>
     </section>
 
-    <section aria-labelledby="h-linker">
+    <section aria-labelledby="h-linker" id="linker" hidden>
       <h2 id="h-linker">Proton label linker</h2>
-      <p class="hint">Creates the Proton label for each new tag through Proton Bridge, using the native host from <code>native/install.sh</code>. Alias creation works whether or not this is on.</p>
-      <label class="check"><input type="checkbox" id="autoLabels"> Create Proton labels automatically</label>
+      <p class="hint">Bridge mode creates the Proton label for each new tag through Proton Bridge, using the native host from <code>native/install.sh</code>. Alias creation works whether or not it succeeds.</p>
       <div class="toolbar">
         <button id="sync-labels" type="button">Sync labels</button>
         <button id="check-linker" type="button">Check connection</button>

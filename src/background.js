@@ -3,6 +3,7 @@ import { buildAlias, randomPart, tagFromHost } from "./lib/alias.js";
 import { fillInTab } from "./lib/fill.js";
 import { getSettings } from "./lib/storage.js";
 import { recordAlias } from "./lib/record.js";
+import { refreshBadge } from "./lib/badge.js";
 
 const MENU_ID = "alias-fill";
 
@@ -33,3 +34,10 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     console.warn("Alias Maker could not fill this field:", err);
   }
 });
+
+// Keep the badge in step with labels, registry and settings, whichever page changed them.
+api.storage.onChanged.addListener((changes, area) => {
+  if (changes.labels || changes.registry || changes.labelMode || changes.categories) refreshBadge();
+});
+api.runtime.onStartup.addListener(refreshBadge);
+refreshBadge();
