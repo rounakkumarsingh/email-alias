@@ -1,5 +1,5 @@
 import { api } from "./browser.js";
-import { getCfToken, getSettings } from "./storage.js";
+import { getCfToken, getSettings, removeAlias } from "./storage.js";
 import { blockAlias, hasPermission, isConfigured, PERMISSION_ERROR, unblockAlias } from "./cloudflare.js";
 
 async function defaultConfig() {
@@ -21,4 +21,20 @@ export async function setAliasBlocked(alias, blocked, deps = {}) {
   if (!(await permitted())) return { ok: false, message: PERMISSION_ERROR, synced: false };
   const r = await (blocked ? blockAlias : unblockAlias)(cfg, alias, deps.fetch);
   return { ...r, synced: r.ok };
+}
+
+// Is the Cloudflare blocklist fully set up? (Used to decide whether "Block it too?" makes sense.)
+export async function blocklistConfigured(deps = {}) {
+  return isConfigured(await (deps.getConfig ?? defaultConfig)());
+}
+
+// Deletes an alias from the registry (leaving a tombstone for sync). Deleting never touches the
+// blocked:<alias> key. With {block: true} the alias is blocked first, so a failed block deletes nothing.
+export async function deleteAlias(alias, { block = false } = {}, deps = {}) {
+  if (block) {
+    const r = await setAliasBlocked(alias, true, deps);
+    if (!r.ok) return r;
+  }
+  await (deps.remove ?? removeAlias)(alias);
+  return { ok: true, message: block ? "Deleted and blocked." : "Deleted." };
 }

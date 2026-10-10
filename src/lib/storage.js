@@ -69,3 +69,30 @@ export async function setCfToken(token) {
   if (token) await api.storage.local.set({ cfToken: token });
   else await api.storage.local.remove("cfToken");
 }
+
+// ---- sync state (all local; none of it is secret) ----
+
+export async function getTombstones() {
+  const { tombstones = {} } = await api.storage.local.get("tombstones");
+  return tombstones;
+}
+
+// Deleting writes the tombstone in the same storage call, stamped now, so the delete keeps its real time
+// even if sync is locked for days. The tombstone is what gets pushed (and wins against older edits elsewhere).
+export async function removeAlias(alias, now = () => new Date().toISOString()) {
+  const key = alias.trim().toLowerCase();
+  const [registry, tombstones] = await Promise.all([getRegistry(), getTombstones()]);
+  await api.storage.local.set({
+    registry: registry.filter((e) => e.alias !== key),
+    tombstones: { ...tombstones, [key]: now() },
+  });
+}
+
+export async function getSyncState() {
+  const { syncState = {} } = await api.storage.local.get("syncState");
+  return syncState;
+}
+
+export async function saveSyncState(syncState) {
+  await api.storage.local.set({ syncState });
+}
