@@ -11,3 +11,8 @@ worker/.dev.vars*
 *.token
 .env
 .env.*
+
+# Build artifacts (signed add-ons, packaged zips)
+web-ext-artifacts/
+*.xpi
+*.zip
