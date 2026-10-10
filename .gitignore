@@ -1,3 +1,13 @@
 node_modules
 dist
 .web-ext-artifacts
+
+# Cloudflare Worker: secrets and local state
+.dev.vars
+.dev.vars.*
+.wrangler/
+worker/.wrangler/
+worker/.dev.vars*
+*.token
+.env
+.env.*
