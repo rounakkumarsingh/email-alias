@@ -58,7 +58,7 @@ export function exportRegistry(registry, now = () => new Date().toISOString(), l
   return JSON.stringify({ app: "alias-maker", version: REGISTRY_VERSION, exported: now(), entries: registry, labels }, null, 2);
 }
 
-function normaliseEntry(raw) {
+export function normaliseEntry(raw) {
   if (!raw || typeof raw !== "object") throw new Error("Entry is not an object");
   const parsed = parseAlias(raw.alias);
   if (!parsed) throw new Error("Invalid alias: " + JSON.stringify(raw.alias));

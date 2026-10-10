@@ -13,8 +13,12 @@ export function ensureTag(labels, tag, now = iso) {
   return { ...labels, [tag]: { status: NEEDS, updated: now() } };
 }
 
+// Tags added automatically (not by a user action) get this stamp, so any real change made in
+// another browser wins when labels sync, and they are never pushed.
+export const DEFAULT_STAMP = "1970-01-01T00:00:00.000Z";
+
 // Adds every tag from the registry and the configured category tags.
-export function reconcile(labels, registry, categories = [], now = iso) {
+export function reconcile(labels, registry, categories = [], now = () => DEFAULT_STAMP) {
   let out = labels;
   for (const tag of [...categories, ...registry.map((e) => e.tag)]) out = ensureTag(out, tag, now);
   return out;
