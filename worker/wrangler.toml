@@ -5,7 +5,7 @@ compatibility_date = "2026-10-01"
 # Create with: bunx wrangler kv namespace create BLOCKLIST   (then paste the id below)
 [[kv_namespaces]]
 binding = "BLOCKLIST"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "4e67a3aa4c55463dbd4410692d90e9b3"
 
 [vars]
 # Verified Email Routing destination (your Proton address).
