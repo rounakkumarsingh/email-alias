@@ -33,17 +33,32 @@ export async function unlockVault(store, passphrase, { create = false, iteration
 
   const text = await store.get(META_KEY);
   if (text) return { keys: await open(JSON.parse(text)), created: false };
-  if (!create) throw new SyncError("no-vault", "No sync data found yet. Confirm the passphrase to start syncing.");
+  if (!create) {
+    throw new SyncError("no-vault", "No sync data found. If you just set it up in another browser, wait a minute and try again; otherwise confirm the passphrase to create it.");
+  }
+
+  // Cloudflare KV is eventually consistent, so "no meta" can be a stale read of a vault that exists. Creating over it
+  // would replace its salt and make everything already synced unreadable. If any synced data exists, refuse and wait.
+  if ((await store.list("reg:")).length || (await store.list("lbl:")).length) {
+    throw new SyncError("vault-unreadable", "Sync data already exists, but its settings can't be read yet (Cloudflare can take up to a minute to catch up). Nothing was changed. Wait a minute and click Unlock again.");
+  }
 
   const salt = newSalt();
   const keys = await deriveKeys(passphrase, salt, iterations);
   const meta = { v: 1, salt, iterations, check: await makeCheck(keys) };
   await store.putMany([{ key: META_KEY, value: JSON.stringify(meta) }]);
 
-  // Another browser may have created the vault at the same moment: whoever's meta is stored now wins.
-  const stored = JSON.parse(await store.get(META_KEY));
-  if (stored.salt === salt) return { keys, created: true };
-  return { keys: await open(stored), created: false };
+  // Best-effort check for two browsers creating at the same moment. A read right after a write can be stale
+  // (missing, or the previous value), so anything we can't read is treated as ours; a different salt means theirs won.
+  let stored = null;
+  try {
+    const t = await store.get(META_KEY);
+    stored = t ? JSON.parse(t) : null;
+  } catch {
+    // unreadable: keep ours
+  }
+  if (stored && stored.salt && stored.salt !== salt) return { keys: await open(stored), created: false };
+  return { keys, created: true };
 }
 
 const blank = () => ({ registry: [], tombstones: {}, labels: {}, pushed: { reg: {}, lbl: {} }, lastHead: null });

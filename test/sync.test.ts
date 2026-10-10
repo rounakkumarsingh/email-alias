@@ -61,6 +61,61 @@ describe("vault", () => {
   });
 });
 
+describe("vault under Cloudflare's eventual consistency", () => {
+  // Reads of sync:meta return nothing for a while after it is written (stale / negatively cached).
+  function staleMeta(s: ReturnType<typeof memStore>) {
+    let wrote = false;
+    return {
+      ...s,
+      get: async (k: string) => (k === "sync:meta" && wrote ? null : s.get(k)),
+      putMany: async (items: any[]) => { if (items.some((i) => i.key === "sync:meta")) wrote = true; return s.putMany(items); },
+    };
+  }
+
+  test("a stale read right after creating the vault does not break creation", async () => {
+    const s = memStore();
+    const r = await unlockVault(staleMeta(s), PASS, { create: true, iterations: IT });
+    expect(r.created).toBe(true);
+    expect(s.data.has("sync:meta")).toBe(true);
+    // Once the write has propagated, another browser opens the same vault with the same keys.
+    const again = await unlockVault(s, PASS, { iterations: IT });
+    expect(again.keys.raw).toBe(r.keys.raw);
+  });
+
+  test("create is refused, and writes nothing, when synced data exists but meta can't be read", async () => {
+    const s = memStore();
+    const a = device(s); await a.unlock(); a.add(A); await a.sync();
+    const metaHidden = { ...s, get: async (k: string) => (k === "sync:meta" ? null : s.get(k)) };
+    const metaBefore = s.data.get("sync:meta");
+    s.log.writes.length = 0;
+    await expect(unlockVault(metaHidden, PASS, { create: true, iterations: IT })).rejects.toMatchObject({ code: "vault-unreadable", message: expect.stringMatching(/Wait a minute/) });
+    expect(s.log.writes).toEqual([]);
+    expect(s.data.get("sync:meta")).toBe(metaBefore);
+  });
+
+  test("the no-vault message tells you to wait if you just set it up elsewhere", async () => {
+    await expect(unlockVault(memStore(), PASS, { iterations: IT })).rejects.toMatchObject({ code: "no-vault", message: expect.stringMatching(/wait a minute/) });
+  });
+
+  test("two browsers creating at once: the one stored wins and the other adopts it", async () => {
+    const s = memStore();
+    const other = await unlockVault(s, "shared pass", { create: true, iterations: IT }); // already stored by the other browser
+    const theirMeta = s.data.get("sync:meta")!;
+    // Our create sees nothing, writes, then reads back THEIR meta (theirs landed last).
+    const racing = {
+      ...s,
+      get: async (k: string) => (k === "sync:meta" && racing.step++ === 0 ? null : k === "sync:meta" ? theirMeta : s.get(k)),
+      putMany: async () => {},
+      step: 0,
+    };
+    const mine = await unlockVault(racing as any, "shared pass", { create: true, iterations: IT });
+    expect(mine.created).toBe(false);
+    expect(mine.keys.raw).toBe(other.keys.raw);
+    racing.step = 0;
+    await expect(unlockVault(racing as any, "different", { create: true, iterations: IT })).rejects.toMatchObject({ code: "wrong-passphrase" });
+  });
+});
+
 describe("sync", () => {
   test("a second browser receives what the first pushed", async () => {
     const s = memStore();

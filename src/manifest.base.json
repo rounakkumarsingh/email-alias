@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Alias Maker",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Make tag.random@yourdomain email aliases, fill them into signup forms and keep a registry.",
   "permissions": [
     "activeTab",

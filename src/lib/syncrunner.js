@@ -70,10 +70,17 @@ export async function syncStatus() {
   };
 }
 
-async function withLock(fn) {
+// Only one sync at a time across the background and open pages. A manual sync waits a few seconds for a
+// running one to finish instead of failing; automatic syncs just skip (the next change or open retries).
+async function withLock(fn, { wait = false } = {}) {
   await restrictSession();
-  const { syncLock } = await session().get("syncLock");
-  if (syncLock && Date.now() - syncLock < LOCK_MS) return { skipped: "busy" };
+  const deadline = Date.now() + (wait ? 15_000 : 0);
+  for (;;) {
+    const { syncLock } = await session().get("syncLock");
+    if (!syncLock || Date.now() - syncLock >= LOCK_MS) break;
+    if (Date.now() >= deadline) return { skipped: "busy" };
+    await new Promise((r) => setTimeout(r, 400));
+  }
   await session().set({ syncLock: Date.now() });
   try {
     return await fn();
@@ -84,7 +91,7 @@ async function withLock(fn) {
 
 // One sync pass. Safe to call from any page. `manual` ignores the automatic daily write limit.
 export async function runSync({ manual = false } = {}) {
-  const state = await getSyncState();
+  let state = await getSyncState();
   if (!state.enabled) return { skipped: "disabled" };
   const cfg = await config();
   if (!isConfigured(cfg)) return { skipped: "not-configured" };
@@ -99,6 +106,9 @@ export async function runSync({ manual = false } = {}) {
   }
 
   return withLock(async () => {
+    // Re-read after waiting for the lock: a sync that just finished may have changed the saved state.
+    state = await getSyncState();
+    const usedNow = state.writes?.day === today() ? state.writes.n : 0;
     const before = await loadLocal(state);
     let r;
     try {
@@ -123,12 +133,12 @@ export async function runSync({ manual = false } = {}) {
       ...state,
       pushed: r.local.pushed,
       lastHead: r.local.lastHead,
-      writes: { day: today(), n: used + r.wrote },
+      writes: { day: today(), n: usedNow + r.wrote },
       lastSync: r.ok ? new Date().toISOString() : state.lastSync,
       lastError: r.ok ? null : r.error,
     });
     return { ok: r.ok, error: r.error, applied: r.applied, wrote: r.wrote, unreadable: r.unreadable };
-  });
+  }, { wait: manual });
 }
 
 // Derives and checks the key against the stored vault, keeps it in session storage, then syncs the queue.

@@ -23,6 +23,8 @@ execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyo
   "-subj", "/CN=api.cloudflare.com", "-addext", "subjectAltName=DNS:api.cloudflare.com", "-days", "1"], { stdio: "ignore" });
 const ACC = "a".repeat(32), NS = "b".repeat(32), TOKEN = "faketoken-e2e";
 const kv = new Map<string, string>();
+// Like real KV: the first read of sync:meta right after it is written is still "not found" (stale / negatively cached).
+let staleMetaReads = 0;
 const log: { method: string; path: string; body: string }[] = [];
 const env = (result: unknown) => Response.json({ success: true, errors: [], messages: [], result });
 const server = Bun.serve({
@@ -42,6 +44,7 @@ const server = Bun.serve({
       const key = rest.slice(8);
       if (req.method === "PUT") { kv.set(key, body); return env(null); }
       if (req.method === "DELETE") { kv.delete(key); return env(null); }
+      if (key === "sync:meta" && staleMetaReads > 0) { staleMetaReads--; return Response.json({ success: false, errors: [{ code: 10009, message: "get: 'key not found'" }] }, { status: 404 }); }
       return kv.has(key) ? new Response(kv.get(key)) : Response.json({ success: false, errors: [{ code: 10009, message: "get: 'key not found'" }] }, { status: 404 });
     }
     if (rest === "/keys") {
@@ -53,7 +56,7 @@ const server = Bun.serve({
       return env({ values: Object.fromEntries(keys.filter((k: string) => kv.has(k)).map((k: string) => [k, kv.get(k)])) });
     }
     if (rest === "/bulk" && req.method === "PUT") {
-      for (const { key, value } of JSON.parse(body)) kv.set(key, value);
+      for (const { key, value } of JSON.parse(body)) { kv.set(key, value); if (key === "sync:meta") staleMetaReads = 1; }
       return env({ successful_key_count: JSON.parse(body).length, unsuccessful_keys: [] });
     }
     return Response.json({ success: false, errors: [{ code: 7003, message: "no route " + rest }] }, { status: 404 });
