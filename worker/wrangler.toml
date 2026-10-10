@@ -1,6 +1,9 @@
 name = "alias-router"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+# Email-only Worker: no public HTTP endpoint.
+workers_dev = false
+preview_urls = false
 
 # Create with: bunx wrangler kv namespace create BLOCKLIST   (then paste the id below)
 [[kv_namespaces]]
@@ -9,7 +12,7 @@ id = "4e67a3aa4c55463dbd4410692d90e9b3"
 
 [vars]
 # Verified Email Routing destination (your Proton address).
-DESTINATION = "you@proton.me"
+DESTINATION = "rounakkumarsingh@proton.me"
 DOMAIN = "rounakkumarsingh.com"
 # Comma-separated full addresses delivered unchanged.
 FIXED = "hello@rounakkumarsingh.com, rounak@rounakkumarsingh.com"
