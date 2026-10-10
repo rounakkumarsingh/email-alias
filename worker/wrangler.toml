@@ -1,0 +1,15 @@
+name = "alias-router"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Create with: bunx wrangler kv namespace create BLOCKLIST   (then paste the id below)
+[[kv_namespaces]]
+binding = "BLOCKLIST"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+# Verified Email Routing destination (your Proton address).
+DESTINATION = "you@proton.me"
+DOMAIN = "rounakkumarsingh.com"
+# Comma-separated full addresses delivered unchanged.
+FIXED = "hello@rounakkumarsingh.com, rounak@rounakkumarsingh.com"

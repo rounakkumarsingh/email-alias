@@ -7,6 +7,7 @@
     "build": "bun run scripts/build.ts",
     "test": "bun test",
     "lint": "bun run build && web-ext lint -s dist/firefox",
+    "deploy:worker": "bunx wrangler deploy -c worker/wrangler.toml",
     "test:host": "python3 -I native/test_host.py"
   },
   "devDependencies": {
