@@ -69,6 +69,8 @@ Pick **Bridge linker** and save. Every tag still marked "needs creating" is crea
 
 Click **Block** next to the alias in the popup or the options page. With the Cloudflare Worker set up, that is all: the alias is rejected at the door. Without it, copy the script again and replace the filter in Proton. Blocked aliases are discarded before anything else runs. **Unblock** reverses it.
 
+**Deleting** an alias from the registry never removes its `blocked:` key, so a blocked alias stays blocked. Deleting an alias that is still active (with the Cloudflare blocklist set up) asks **Block it too?** with *Delete and block* as the default, because the catch-all keeps accepting a deleted alias otherwise.
+
 ## Cloudflare mail router (Email Worker)
 
 A Worker in `worker/` sits behind your catch-all address and decides what happens to each message:
@@ -126,6 +128,52 @@ The token stays in local extension storage: never synced, never exported, never 
 2. Dashboard, **Email Routing**: set the catch-all back to **Send to an email** (your Proton address).
 3. `bunx wrangler delete -c worker/wrangler.toml`, then optionally delete the `BLOCKLIST` namespace and the API token, and clear the Cloudflare fields in the extension options.
 
+## Sync between browsers (encrypted)
+
+The alias registry and the Proton label statuses can be kept the same in every browser through the same Cloudflare KV namespace. Everything is encrypted in the browser first, so Cloudflare only stores ciphertext.
+
+### What is stored, and what Cloudflare can see
+
+| KV key | Content |
+|---|---|
+| `reg:<id>` | One encrypted registry entry (or deletion marker), `id` = a keyed hash of the alias |
+| `lbl:<id>` | One encrypted label status, `id` = a keyed hash of the tag |
+| `sync:meta` | Random salt, iteration count and an encrypted check value (plaintext salt only) |
+| `sync:head` | A random value rewritten on every push, so other browsers can tell something changed |
+| `blocked:<alias>` | Unchanged, plaintext, read by the Worker. **Block and Unblock still write these**, and sync never touches them |
+
+Each blob is AES-256-GCM with a fresh random IV, keyed from your passphrase with PBKDF2-SHA256 (600,000 iterations), and bound to its key name so it can't be moved to another key. Cloudflare can see how many entries exist, their sizes, when they change, and the `blocked:` aliases. It cannot see aliases, tags, sites, notes or label names under `reg:`/`lbl:`. There is **no passphrase recovery**: if you lose it, the synced data is unreadable, so keep a JSON export (Export/Import still work as an offline backup). Changing the passphrase is not supported yet.
+
+### Setting up the first browser
+
+1. Set up the Cloudflare blocklist (account ID, namespace ID, token) as described above.
+2. In **Sync between browsers**, enter a passphrase and click **Unlock**. Because no sync data exists yet you are asked to type it again; then click **Create sync vault**.
+
+### Adding a second browser
+
+1. Install the extension and enter the **same account ID, namespace ID and API token** in *Cloudflare blocklist* (the same token, or a new one with the same Workers KV Storage Edit permission). Save, allow `api.cloudflare.com` when Firefox asks, and click *Test connection*.
+2. In *Sync between browsers* enter the **same passphrase** and click **Unlock**. A wrong passphrase gives "Wrong sync passphrase" and changes nothing remotely.
+
+### How it behaves
+
+- **When it syncs:** when the popup or options page opens, on **Sync now**, and a few seconds after every change. An unchanged check costs one KV read.
+- **Conflicts:** last write wins per entry, using each entry's `updated` time, so keep your computers' clocks roughly right. Deleting leaves a deletion marker so it propagates; an edit made later than the deletion brings the alias back.
+- **Locked mode:** the key is kept only in memory (below), so after a browser restart sync is locked until you enter the passphrase in the popup or the options page. While locked, creating, filling, copying and blocking aliases all keep working. Changes queue locally, nothing is dropped (deletions keep the time you made them), and they are sent after you unlock.
+- **Free-plan limits:** only changed entries are written, in one bulk call, plus one write for `sync:head`. Cloudflare's free plan allows 1,000 KV writes a day (Block and Unblock also write one key each). Automatic sync pauses at 800 writes in a UTC day and says so; **Sync now** still works. KV is eventually consistent, so another browser can take up to about a minute to see a change.
+- **Unreadable data:** if some synced items can't be decrypted, the extension keeps your local data, writes nothing, and reports how many items it could not read.
+
+### Where the key lives
+
+The passphrase is never stored. The derived keys are kept only in `storage.session` (memory only, cleared when the browser closes) and the extension sets its access level to trusted contexts explicitly, so content scripts on web pages cannot read it. Both the Chrome and MDN docs say session storage is not exposed to content scripts by default, but neither names the default level, so this was checked rather than assumed:
+
+- **Chromium 152** (`scripts/dev/e2e-sync.ts`): a content script on a web page reads `storage.session` and gets "Access to storage is not allowed from this context", while `storage.local` works as the control.
+- **Zen 1.23.2b**, a Firefox fork (`scripts/dev/probe-session-firefox.ts`): in a content script `browser.storage.session` is `undefined`, both with the default access level and after setting `TRUSTED_CONTEXTS`.
+- Stock Firefox was not available to test; the Zen result and the MDN statement are what the Firefox claim rests on. Re-run the probe with `bun run scripts/dev/probe-session-firefox.ts <dir> /path/to/firefox` to check yours.
+
+### Wiping remote sync data
+
+Delete the `reg:`, `lbl:` and `sync:` keys (never `blocked:`), for example with `bunx wrangler kv key list --binding BLOCKLIST --remote -c worker/wrangler.toml` and `bunx wrangler kv bulk delete`. Then click *Turn off on this browser* on each browser.
+
 ## Bridge linker setup (optional)
 
 Only needed for Bridge mode, which requires a paid Proton plan. A small Python host talks to the Proton Bridge IMAP server and creates labels as `Labels/<tag>`. It needs Proton Bridge running, Python 3, and `secret-tool` (libsecret). Nothing about your mail is stored in the extension: the Bridge password stays in the system keyring and TLS verification is always on.
@@ -148,4 +196,5 @@ The host accepts only `ping`, `list_labels`, `create_label` and `ensure_labels`,
 ## Development notes
 
 - `scripts/dev/fake_bridge.py` is a fake STARTTLS IMAP server, and `scripts/dev/e2e-linker.ts` drives the Chromium build against the real host and it.
+- `scripts/dev/e2e-sync.ts <dir>` drives two Chromium profiles through encrypted sync against a local mock of the Cloudflare KV API (needs `openssl`), including the locked-mode queue and the `storage.session` content-script probe.
 - `scripts/shots.ts` takes Chromium screenshots of the popup and options page.
