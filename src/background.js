@@ -4,6 +4,7 @@ import { fillInTab } from "./lib/fill.js";
 import { getSettings } from "./lib/storage.js";
 import { recordAlias } from "./lib/record.js";
 import { refreshBadge } from "./lib/badge.js";
+import { runSync } from "./lib/syncrunner.js";
 
 const MENU_ID = "alias-fill";
 
@@ -39,5 +40,23 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 api.storage.onChanged.addListener((changes, area) => {
   if (changes.labels || changes.registry || changes.labelMode || changes.categories) refreshBadge();
 });
+
+// Sync a few seconds after any local change. Changes made while sync is locked stay queued and go out after unlock.
+let syncTimer;
+function syncSoon(delay = 3000) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      const r = await runSync();
+      if (r && r.retry) syncSoon(1000);
+    } catch (err) {
+      console.warn("Alias Maker sync failed:", err);
+    }
+  }, delay);
+}
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.registry || changes.tombstones || changes.labels)) syncSoon();
+});
+
 api.runtime.onStartup.addListener(refreshBadge);
 refreshBadge();

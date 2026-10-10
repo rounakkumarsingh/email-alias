@@ -119,6 +119,29 @@
       </form>
     </section>
 
+    <section aria-labelledby="h-sync">
+      <h2 id="h-sync">Sync between browsers</h2>
+      <p class="hint">Keeps the alias registry and Proton label statuses the same in every browser, through the Cloudflare namespace above. Everything is encrypted in the browser before it is sent, with a key made from your passphrase. Cloudflare never sees aliases, tags, sites or notes. If you forget the passphrase the synced data can't be recovered, so keep a JSON export. While sync is locked, aliases, filling and blocking keep working and changes are sent after you unlock.</p>
+      <form id="sync" class="form-grid" novalidate>
+        <label class="field">
+          <span>Sync passphrase</span>
+          <input id="syncPass" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field" id="syncPass2-field" hidden>
+          <span>Type it again to create the sync vault</span>
+          <input id="syncPass2" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="toolbar">
+          <button class="primary" id="sync-unlock" type="submit">Unlock</button>
+          <button id="sync-now" type="button">Sync now</button>
+          <button id="sync-lock" type="button">Lock</button>
+          <button id="sync-off" type="button">Turn off on this browser</button>
+        </div>
+        <p id="sync-status" class="status" role="status"></p>
+        <p id="sync-detail" class="hint"></p>
+      </form>
+    </section>
+
     <section aria-labelledby="h-sieve">
       <h2 id="h-sieve">Proton filter script <small>(for a future Proton Mail Plus move)</small> <span id="stale" class="badge" hidden>Out of date</span></h2>
       <ol class="steps">
@@ -144,6 +167,18 @@
       <p id="linker-status" class="status" role="status"></p>
     </section>
   </main>
+  <dialog id="del-dialog" aria-labelledby="del-title">
+    <form method="dialog">
+      <h2 id="del-title">Delete this alias?</h2>
+      <p id="del-text"></p>
+      <p class="hint">The catch-all keeps accepting a deleted alias unless it is blocked. Block it too?</p>
+      <div class="toolbar">
+        <button value="block" class="primary" autofocus>Delete and block</button>
+        <button value="delete">Delete only</button>
+        <button value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
   <script src="options.js"></script>
 </body>
 </html>

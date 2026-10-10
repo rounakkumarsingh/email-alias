@@ -1,9 +1,10 @@
-import { exportRegistry, mergeRegistry, parseImport, removeEntry, search, setNote, setStatus, tagsOf } from "../lib/registry.js";
+import { exportRegistry, mergeRegistry, parseImport, search, setNote, setStatus, tagsOf } from "../lib/registry.js";
 import { validateSettings } from "../lib/settings.js";
 import { getCfToken, getLabels, getLinkerStatus, getRegistry, getSettings, saveLabels, saveRegistry, saveSettings, setCfToken, setLinkerStatus, syncedLabels } from "../lib/storage.js";
 import { api } from "../lib/browser.js";
 import { hasPermission, isConfigured, requestPermission, testConnection } from "../lib/cloudflare.js";
-import { setAliasBlocked } from "../lib/blocklist.js";
+import { blocklistConfigured, deleteAlias, setAliasBlocked } from "../lib/blocklist.js";
+import { disableSync, lock, runSync, syncStatus, unlock } from "../lib/syncrunner.js";
 import { CREATED, markCreated, mergeLabels, NEEDS, parseLabels, pendingTags, setLabelStatus, tagList } from "../lib/labels.js";
 import { switchLabelMode } from "../lib/modeswitch.js";
 import { ensureLabels, ping } from "../lib/linker.js";
@@ -118,14 +119,34 @@ async function renderRegistry() {
       btn("Copy", () => navigator.clipboard.writeText(e.alias)),
       " ",
       btn("Delete", async () => {
-        if (!confirm(`Remove ${e.alias} from the registry? A deleted alias is no longer blocked in the script.`)) return;
-        await saveRegistry(removeEntry(await getRegistry(), e.alias));
+        // Deleting never touches the blocked: key. For an active alias, offer to block it so the catch-all stops accepting it.
+        let block = false;
+        if (e.status === "active" && (await blocklistConfigured())) {
+          const choice = await askDelete(e.alias);
+          if (choice === "cancel") return;
+          block = choice === "block";
+        } else if (!confirm(`Remove ${e.alias} from the registry? A deleted alias is no longer blocked in the script.`)) {
+          return;
+        }
+        const r = await deleteAlias(e.alias, { block });
+        say("registry-status", r.message, r.ok ? "ok" : "err");
         await renderAll();
       }),
     );
     tr.append(noteTd, actions);
     rows.append(tr);
   }
+}
+
+// Resolves to "block", "delete" or "cancel" (Enter picks the default, Escape cancels).
+function askDelete(alias) {
+  const dlg = $("del-dialog");
+  $("del-text").textContent = alias;
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => resolve(dlg.returnValue === "block" || dlg.returnValue === "delete" ? dlg.returnValue : "cancel"), { once: true });
+    dlg.returnValue = "";
+    dlg.showModal();
+  });
 }
 
 async function renderSieve() {
@@ -321,3 +342,96 @@ $("sync-labels").addEventListener("click", (e) =>
 $("check-linker").addEventListener("click", (e) => runLinker(() => ping(), e.currentTarget));
 
 showLinkerStatus();
+
+
+// ---- Sync ----
+
+let creating = false;
+
+function setCreating(on) {
+  creating = on;
+  $("syncPass2-field").hidden = !on;
+  $("sync-unlock").textContent = on ? "Create sync vault" : "Unlock";
+}
+
+async function renderSync() {
+  const st = await syncStatus();
+  const lines = [];
+  if (!st.configured) lines.push("Set up the Cloudflare blocklist above first.");
+  else if (!st.enabled) lines.push("Sync is off on this browser. Enter your passphrase to start.");
+  else lines.push(st.locked ? "Locked. Enter the passphrase to sync." : "Unlocked.");
+  if (st.enabled && st.pending) lines.push(`${st.pending} change${st.pending === 1 ? "" : "s"} waiting to sync.`);
+  if (st.lastSync) lines.push("Last synced " + new Date(st.lastSync).toLocaleString() + ".");
+  if (st.lastError) lines.push("Last problem: " + st.lastError);
+  lines.push(`Cloudflare writes today: ${st.writesToday} of 1,000.`);
+  $("sync-detail").textContent = lines.join(" ");
+  $("sync-now").disabled = !st.enabled || st.locked;
+  $("sync-lock").disabled = !st.enabled || st.locked;
+  $("sync-off").disabled = !st.enabled;
+  $("sync-unlock").disabled = !st.configured;
+}
+
+function reportSync(r, okMessage) {
+  if (r.skipped === "busy") return say("sync-status", "Another sync is running. Try again in a moment.", "err");
+  if (r.error) return say("sync-status", r.error, "err");
+  say("sync-status", okMessage);
+}
+
+$("sync").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const pass = $("syncPass").value;
+  if (creating && pass !== $("syncPass2").value) return say("sync-status", "The two passphrases don't match.", "err");
+  say("sync-status", "Working (deriving the key takes a moment)...");
+  try {
+    const r = await unlock(pass, { create: creating });
+    $("syncPass").value = "";
+    $("syncPass2").value = "";
+    setCreating(false);
+    reportSync(r, "Unlocked and synced.");
+  } catch (err) {
+    if (err.code === "no-vault") {
+      setCreating(true);
+      say("sync-status", err.message, "err");
+      $("syncPass2").focus();
+    } else {
+      say("sync-status", err.message, "err");
+    }
+  }
+  await renderAll();
+  await renderSync();
+});
+
+$("sync-now").addEventListener("click", async () => {
+  say("sync-status", "Syncing...");
+  try {
+    reportSync(await runSync({ manual: true }), "Synced.");
+  } catch (err) {
+    say("sync-status", err.message, "err");
+  }
+  await renderAll();
+  await renderSync();
+});
+
+$("sync-lock").addEventListener("click", async () => {
+  await lock();
+  say("sync-status", "Locked. Changes keep queuing and are sent after you unlock.");
+  await renderSync();
+});
+
+$("sync-off").addEventListener("click", async () => {
+  if (!confirm("Turn sync off on this browser? Data already in Cloudflare is left alone.")) return;
+  await disableSync();
+  say("sync-status", "Sync is off on this browser.");
+  await renderSync();
+});
+
+// Opening the page syncs once (a no-op while locked or off).
+renderSync().then(async () => {
+  try {
+    const r = await runSync();
+    if (r.applied) await renderAll();
+  } catch {
+    // The status line below reports the problem.
+  }
+  await renderSync();
+});

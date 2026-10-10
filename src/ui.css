@@ -179,3 +179,11 @@ fieldset.field { border: none; padding: 0; margin: 0; min-width: 0; }
 fieldset.field legend { padding: 0; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--warn-bg); color: var(--warn-ink); }
 .pill.done { background: var(--tag-bg); color: var(--ok); }
+
+dialog { max-width: 420px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { margin: 0 0 8px; font-size: 16px; }
+dialog p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.popup .notice input { flex: 1; min-width: 0; }
+
+[hidden] { display: none !important; }

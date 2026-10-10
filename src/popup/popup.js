@@ -7,6 +7,7 @@ import { markCreated, NEEDS } from "../lib/labels.js";
 import { recordAlias } from "../lib/record.js";
 import { sieveState } from "../lib/sieve-state.js";
 import { setAliasBlocked } from "../lib/blocklist.js";
+import { runSync, syncStatus, unlock } from "../lib/syncrunner.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -198,4 +199,38 @@ async function init() {
   }
 }
 
-init();
+// Sync: runs once when the popup opens (a no-op while locked or off). When locked, a row offers the passphrase.
+async function renderSync() {
+  const st = await syncStatus();
+  const show = st.configured && st.enabled && st.locked;
+  $("sync-row").hidden = !show;
+  if (show) {
+    $("sync-text").textContent = st.pending ? `Sync locked, ${st.pending} change${st.pending === 1 ? "" : "s"} waiting.` : "Sync locked.";
+  }
+}
+
+$("sync-unlock").addEventListener("click", async () => {
+  try {
+    const r = await unlock($("sync-pass").value);
+    $("sync-pass").value = "";
+    say(r.error ? r.error : "Unlocked and synced.", r.error ? "err" : "ok");
+    await renderList();
+  } catch (err) {
+    say(err.code === "no-vault" ? "No sync vault yet. Create it in Registry & settings." : err.message, "err");
+  }
+  await renderSync();
+});
+
+async function syncOnOpen() {
+  await renderSync();
+  try {
+    const r = await runSync();
+    if (r.applied) await renderList();
+    if (r.error && r.skipped !== "locked") say(r.error, "err");
+  } catch (err) {
+    say(err.message, "err");
+  }
+  await renderSync();
+}
+
+init().then(syncOnOpen);
