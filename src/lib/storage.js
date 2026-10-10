@@ -58,3 +58,14 @@ export async function syncedLabels() {
   if (next !== labels) await saveLabels(next);
   return next;
 }
+
+// The Cloudflare API token lives only in local storage: never synced, never part of an export, never logged.
+export async function getCfToken() {
+  const { cfToken = "" } = await api.storage.local.get("cfToken");
+  return cfToken;
+}
+
+export async function setCfToken(token) {
+  if (token) await api.storage.local.set({ cfToken: token });
+  else await api.storage.local.remove("cfToken");
+}

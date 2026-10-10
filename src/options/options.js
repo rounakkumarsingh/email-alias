@@ -1,6 +1,9 @@
 import { exportRegistry, mergeRegistry, parseImport, removeEntry, search, setNote, setStatus, tagsOf } from "../lib/registry.js";
 import { validateSettings } from "../lib/settings.js";
-import { getLabels, getLinkerStatus, getRegistry, getSettings, saveLabels, saveRegistry, saveSettings, setLinkerStatus, syncedLabels } from "../lib/storage.js";
+import { getCfToken, getLabels, getLinkerStatus, getRegistry, getSettings, saveLabels, saveRegistry, saveSettings, setCfToken, setLinkerStatus, syncedLabels } from "../lib/storage.js";
+import { api } from "../lib/browser.js";
+import { hasPermission, isConfigured, requestPermission, testConnection } from "../lib/cloudflare.js";
+import { setAliasBlocked } from "../lib/blocklist.js";
 import { CREATED, markCreated, mergeLabels, NEEDS, parseLabels, pendingTags, setLabelStatus, tagList } from "../lib/labels.js";
 import { switchLabelMode } from "../lib/modeswitch.js";
 import { ensureLabels, ping } from "../lib/linker.js";
@@ -29,7 +32,8 @@ async function loadSettings() {
 
 $("settings").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  const raw = { ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, $(f).value])), labelMode: selectedMode() };
+  const previous = await getSettings();
+  const raw = { ...previous, ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, $(f).value])), labelMode: selectedMode() };
   const { ok, errors, value } = validateSettings(raw);
   for (const f of FIELDS) {
     $("e-" + f).textContent = errors[f] || "";
@@ -40,7 +44,6 @@ $("settings").addEventListener("submit", async (ev) => {
     $(FIELDS.find((f) => errors[f])).focus();
     return;
   }
-  const previous = await getSettings();
   await saveSettings(value);
   say("settings-status", "Settings saved.");
   await loadSettings();
@@ -105,7 +108,10 @@ async function renderRegistry() {
     const blocked = e.status === "blocked";
     actions.append(
       btn(blocked ? "Unblock" : "Block", async () => {
+        const r = await setAliasBlocked(e.alias, !blocked);
+        if (!r.ok) return say("registry-status", r.message, "err");
         await saveRegistry(setStatus(await getRegistry(), e.alias, blocked ? "active" : "blocked"));
+        say("registry-status", r.synced ? r.message : blocked ? "Unblocked." : "Blocked.");
         await renderAll();
       }),
       " ",
@@ -225,6 +231,63 @@ $("import-file").addEventListener("change", async (ev) => {
 
 
 loadSettings().then(renderAll);
+
+// ---- Cloudflare blocklist ----
+
+async function loadCf() {
+  const s = await getSettings();
+  $("cfAccountId").value = s.cfAccountId;
+  $("cfNamespaceId").value = s.cfNamespaceId;
+  $("cfToken").value = "";
+  $("cfToken").placeholder = (await getCfToken()) ? "Token saved (hidden)" : "";
+  const granted = await hasPermission(api);
+  say("cf-permission", granted ? "Permission for api.cloudflare.com: granted." : "Permission for api.cloudflare.com: not granted yet. Save or Test connection will ask for it.", granted ? "ok" : "err");
+}
+
+async function cfConfig() {
+  const s = await getSettings();
+  return { accountId: s.cfAccountId, namespaceId: s.cfNamespaceId, token: await getCfToken() };
+}
+
+$("cf").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  // Ask first: permissions.request() only works directly inside the click handler.
+  const wantsApi = $("cfAccountId").value.trim() || $("cfNamespaceId").value.trim() || $("cfToken").value;
+  const granted = wantsApi ? await requestPermission(api) : await hasPermission(api);
+  const previous = await getSettings();
+  const raw = { ...previous, cfAccountId: $("cfAccountId").value, cfNamespaceId: $("cfNamespaceId").value };
+  const { errors, value } = validateSettings(raw);
+  for (const f of ["cfAccountId", "cfNamespaceId"]) {
+    $("e-" + f).textContent = errors[f] || "";
+    $(f).setAttribute("aria-invalid", errors[f] ? "true" : "false");
+  }
+  if (errors.cfAccountId || errors.cfNamespaceId) {
+    say("cf-status", "Fix the highlighted fields.", "err");
+    return;
+  }
+  await saveSettings(value);
+  const typed = $("cfToken").value.trim();
+  if (typed) await setCfToken(typed);
+  else if (!value.cfAccountId && !value.cfNamespaceId) await setCfToken("");
+  say("cf-status", "Saved.");
+  await loadCf();
+  if (wantsApi && !granted) say("cf-status", "Saved, but access to api.cloudflare.com was not allowed. Block and Unblock will not reach Cloudflare until you allow it.", "err");
+});
+
+$("cf-test").addEventListener("click", async () => {
+  const granted = await requestPermission(api);
+  await loadCf();
+  if (!granted) return say("cf-status", "Allow access to api.cloudflare.com to test the connection.", "err");
+  const cfg = await cfConfig();
+  const typed = $("cfToken").value.trim();
+  const test = { ...cfg, accountId: $("cfAccountId").value.trim().toLowerCase() || cfg.accountId, namespaceId: $("cfNamespaceId").value.trim().toLowerCase() || cfg.namespaceId, token: typed || cfg.token };
+  if (!isConfigured(test)) return say("cf-status", "Enter the account ID, namespace ID and token first.", "err");
+  say("cf-status", "Testing...");
+  const r = await testConnection(test);
+  say("cf-status", r.message, r.ok ? "ok" : "err");
+});
+
+loadCf();
 
 // ---- Proton label linker ----
 

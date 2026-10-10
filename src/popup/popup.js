@@ -6,6 +6,7 @@ import { getLabels, getRegistry, getSettings, saveLabels, saveRegistry, syncedLa
 import { markCreated, NEEDS } from "../lib/labels.js";
 import { recordAlias } from "../lib/record.js";
 import { sieveState } from "../lib/sieve-state.js";
+import { setAliasBlocked } from "../lib/blocklist.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -70,8 +71,10 @@ async function renderList() {
     block.textContent = blocked ? "Unblock" : "Block";
     block.setAttribute("aria-label", `${block.textContent} ${e.alias}`);
     block.addEventListener("click", async () => {
+      const r = await setAliasBlocked(e.alias, !blocked);
+      if (!r.ok) return say(r.message, "err");
       await saveRegistry(setStatus(await getRegistry(), e.alias, blocked ? "active" : "blocked"));
-      say(blocked ? "Unblocked." : "Blocked. Copy the updated filter script from Registry & settings.");
+      say(r.synced ? r.message : blocked ? "Unblocked." : "Blocked. Copy the updated filter script from Registry & settings.");
       await renderList();
       await renderStale();
     });

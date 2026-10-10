@@ -8,6 +8,8 @@ export const DEFAULTS = {
   categories: ["fin", "govt"],
   spamFolder: "Spam",
   labelMode: "manual",
+  cfAccountId: "",
+  cfNamespaceId: "",
 };
 
 const EMAIL = /^[a-z0-9._+-]+@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -51,6 +53,13 @@ export function validateSettings(raw) {
   const mode = raw.labelMode ?? DEFAULTS.labelMode;
   if (!LABEL_MODES.includes(mode)) errors.labelMode = "Choose Manual or Bridge linker.";
   value.labelMode = mode;
+
+  // Cloudflare blocklist is optional: both IDs empty means "not used". The API token is stored separately.
+  for (const [field, label] of [["cfAccountId", "account ID"], ["cfNamespaceId", "KV namespace ID"]]) {
+    const id = String(raw[field] ?? "").trim().toLowerCase();
+    if (id && !/^[0-9a-f]{32}$/.test(id)) errors[field] = `The ${label} is 32 hex characters (0-9, a-f).`;
+    value[field] = id;
+  }
 
   return { ok: Object.keys(errors).length === 0, errors, value };
 }

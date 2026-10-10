@@ -83,8 +83,44 @@
       </div>
     </section>
 
+    <section aria-labelledby="h-cf">
+      <h2 id="h-cf">Cloudflare blocklist</h2>
+      <p class="hint">Optional. When set, Block and Unblock also update the Worker's blocklist, so a blocked alias is rejected at the door. Leave all three fields empty to keep using only the Proton filter script.</p>
+      <ol class="steps">
+        <li>In the Cloudflare dashboard, open the account home and copy the <strong>Account ID</strong>. Then go to Storage &amp; databases &rarr; KV, open the <code>BLOCKLIST</code> namespace and copy its <strong>ID</strong>.</li>
+        <li>Open My Profile &rarr; API Tokens &rarr; Create Token &rarr; Create Custom Token.</li>
+        <li>Add exactly one permission: <strong>Account</strong> &rarr; <strong>Workers KV Storage</strong> &rarr; <strong>Edit</strong>. Cloudflare applies it to the whole account, not a single namespace.</li>
+        <li>Under Account Resources choose <strong>Include</strong> &rarr; your account only.</li>
+        <li>Optional: set a TTL (expiry date). If the token expires the extension will say "Cloudflare token invalid or expired" and you create a new one. Leave Client IP Address Filtering empty.</li>
+        <li>Create the token, copy it once, and paste it below. It stays on this device, is never synced and is never included in exports.</li>
+      </ol>
+      <form id="cf" class="form-grid" novalidate>
+        <label class="field">
+          <span>Account ID</span>
+          <input id="cfAccountId" autocomplete="off" spellcheck="false" aria-describedby="e-cfAccountId">
+          <p class="error" id="e-cfAccountId"></p>
+        </label>
+        <label class="field">
+          <span>KV namespace ID</span>
+          <input id="cfNamespaceId" autocomplete="off" spellcheck="false" aria-describedby="e-cfNamespaceId">
+          <p class="error" id="e-cfNamespaceId"></p>
+        </label>
+        <label class="field">
+          <span>API token</span>
+          <input id="cfToken" type="password" autocomplete="off" spellcheck="false" aria-describedby="h-cftoken">
+          <p class="hint" id="h-cftoken">Leave empty to keep the saved token. Clear all three fields and save to remove it.</p>
+        </label>
+        <div class="toolbar">
+          <button class="primary" type="submit">Save</button>
+          <button id="cf-test" type="button">Test connection</button>
+          <span id="cf-status" class="status" role="status"></span>
+        </div>
+        <p id="cf-permission" class="status" role="status"></p>
+      </form>
+    </section>
+
     <section aria-labelledby="h-sieve">
-      <h2 id="h-sieve">Proton filter script <span id="stale" class="badge" hidden>Out of date</span></h2>
+      <h2 id="h-sieve">Proton filter script <small>(for a future Proton Mail Plus move)</small> <span id="stale" class="badge" hidden>Out of date</span></h2>
       <ol class="steps">
         <li>Copy the script below.</li>
         <li>In Proton Mail open Settings &rarr; Filters &rarr; Add filter &rarr; Add Sieve filter.</li>
