@@ -37,7 +37,9 @@ Press `Alt+Shift+E` to open the popup (change it at `chrome://extensions/shortcu
 - **Registry:** every alias you fill or copy is recorded with tag, site, date, status and note. Search it in the popup or on the options page. Export and import it as JSON to share between browsers; entries merge by alias and the most recently changed one wins.
 - **Settings** (options page): domain, random length (5 to 12), fixed addresses, category tags, spam folder name and label mode (below).
 
-## Proton filter script
+## Proton filter script (for a future Proton Mail Plus move)
+
+This is the alternative to the Cloudflare Worker below, for when you are on a Proton plan with custom filters. With the Worker in place you do not need it.
 
 1. Open the options page and click **Copy full script**.
 2. In Proton Mail: **Settings → Filters → Add filter → Add Sieve filter**. Paste, name it, save.
@@ -65,7 +67,64 @@ Pick **Bridge linker** and save. Every tag still marked "needs creating" is crea
 
 ### Blocking a leaked alias
 
-Click **Block** next to the alias in the popup or the options page, copy the script again, and replace the filter in Proton. Blocked aliases are discarded before anything else runs. **Unblock** reverses it.
+Click **Block** next to the alias in the popup or the options page. With the Cloudflare Worker set up, that is all: the alias is rejected at the door. Without it, copy the script again and replace the filter in Proton. Blocked aliases are discarded before anything else runs. **Unblock** reverses it.
+
+## Cloudflare mail router (Email Worker)
+
+A Worker in `worker/` sits behind your catch-all address and decides what happens to each message:
+
+| Recipient | Result |
+|---|---|
+| A fixed address (`FIXED` in `worker/wrangler.toml`), any case | Forwarded unchanged to your Proton address |
+| `tag.random@domain` (tag `[a-z0-9-]{1,24}`, random `[a-z0-9]{5,12}`), any case | Forwarded with headers `X-Alias-Tag` and `X-Alias`, unless the alias is in the KV blocklist |
+| Blocked alias, malformed address, plus-addressing, unknown address | Rejected with the single message `Address not accepted` |
+
+The Subject is **not** rewritten. Cloudflare's `forward()` can only add `X-` headers, and re-sending a modified copy would break the sender's DKIM/SPF/DMARC results, replace the From address and risk the free plan's 10 ms CPU limit. The Worker never reads message bodies or subjects and logs only `{ts, alias, tag, action}`.
+
+If `forward()` fails the Worker rethrows instead of rejecting, so the sender is not told "permanent failure". If the KV read fails it forwards anyway (action `kv_error`). A newly blocked alias can keep delivering for up to about a minute because KV is eventually consistent.
+
+### Setup
+
+1. `bunx wrangler login` (you run this yourself).
+2. `bunx wrangler kv namespace create BLOCKLIST` and paste the printed `id` into `worker/wrangler.toml`.
+3. In `worker/wrangler.toml` set `DESTINATION` (your verified Proton address), `DOMAIN` and `FIXED`.
+4. Deploy with one command: `bun run deploy:worker`.
+
+### Switch Email Routing to the Worker (dashboard)
+
+Nothing here is changed for you.
+
+1. Cloudflare dashboard, your domain, **Email → Email Routing → Routing rules**.
+2. On **Catch-all address** choose **Edit**, set the action to **Send to a Worker**, pick `alias-router`, and save. Make sure the catch-all is enabled.
+3. Delete or disable any old custom rules that forward `hello@` or `rounak@` straight to Proton (the Worker handles them now).
+
+### Token for Block/Unblock in the extension
+
+1. Dashboard home: copy the **Account ID**. **Storage & databases → KV**: open `BLOCKLIST` and copy the namespace **ID**.
+2. **My Profile → API Tokens → Create Token → Create Custom Token.**
+3. Permission: **Account → Workers KV Storage → Edit**, and nothing else. Cloudflare applies it to the whole account; it cannot be limited to one namespace.
+4. Account Resources: **Include → your account**.
+5. Optional: set a TTL. When it expires the extension says "Cloudflare token invalid or expired" and you make a new one. Leave Client IP Address Filtering empty.
+6. In the extension options, **Cloudflare blocklist**: paste the IDs and token, click **Save** (Firefox asks you to allow `api.cloudflare.com`; allow it), then **Test connection**.
+
+The token stays in local extension storage: never synced, never exported, never logged.
+
+### Test checklist
+
+- [ ] `bun test` passes.
+- [ ] Optional local run: `cd worker && bunx wrangler dev`, then `curl -X POST 'http://localhost:8787/cdn-cgi/local/email' --url-query 'from=a@b.com' --url-query 'to=shop.abcde@yourdomain.com' --data-raw $'From: a@b.com\r\nTo: shop.abcde@yourdomain.com\r\nSubject: t\r\n\r\nhi'`.
+- [ ] After deploy and the dashboard switch, send mail to `hello@`, a live alias, and `junk@`. The first two arrive in Proton; `junk@` bounces with `Address not accepted`.
+- [ ] From a Gmail account, send a test to a valid alias. In Proton open **More → View headers** and confirm `X-Alias-Tag` and `X-Alias` are present.
+- [ ] Block that alias in the extension, wait a minute, send again: it bounces with `Address not accepted`. Unblock and confirm delivery returns.
+- [ ] `bunx wrangler kv key list --binding BLOCKLIST -c worker/wrangler.toml` shows `blocked:<alias>` while blocked.
+- [ ] Failure behaviour: Cloudflare's docs do not say which SMTP code an uncaught exception produces. Check once (for example by temporarily setting `DESTINATION` to an unverified address) that the sender gets a temporary failure, not a permanent one. Undo it afterwards.
+- [ ] Watch activity with `bunx wrangler tail alias-router`; lines show only alias, tag, action and time.
+
+### Retiring the Worker (moving to Proton Mail Plus)
+
+1. Copy the Sieve script from the options page into a Proton filter.
+2. Dashboard, **Email Routing**: set the catch-all back to **Send to an email** (your Proton address).
+3. `bunx wrangler delete -c worker/wrangler.toml`, then optionally delete the `BLOCKLIST` namespace and the API token, and clear the Cloudflare fields in the extension options.
 
 ## Bridge linker setup (optional)
 
