@@ -25,7 +25,7 @@ async function call(cfg, url, init, fetchFn) {
   } catch {
     return { ok: false, message: "Could not reach Cloudflare. Check your connection." };
   }
-  if (res.ok) return { ok: true };
+  if (res.ok) return { ok: true, res };
 
   let errors = [];
   try {
@@ -34,10 +34,78 @@ async function call(cfg, url, init, fetchFn) {
   if (res.status === 401 || res.status === 403 || errors.some((e) => AUTH_CODES.has(e.code))) {
     return { ok: false, message: TOKEN_ERROR };
   }
-  if (res.status === 404) return { ok: false, message: "Account ID or KV namespace ID not found. Check both in settings." };
+  if (res.status === 404) {
+    return { ok: false, status: 404, code: errors[0]?.code, message: "Account ID or KV namespace ID not found. Check both in settings." };
+  }
   if (res.status === 429) return { ok: false, message: "Cloudflare is rate limiting requests. Try again in a minute." };
   const detail = errors[0]?.message ? `: ${String(errors[0].message).split(cfg.token).join("***")}` : "";
   return { ok: false, message: `Cloudflare returned an error (${res.status})${detail}` };
+}
+
+// ---- generic KV store used by sync (values here are always client-side encrypted) ----
+
+const KEY_NOT_FOUND = 10009;
+const BULK_GET_MAX = 100;
+const BULK_PUT_MAX = 10000;
+
+// Throws Error(message) on any failure; messages never contain the token.
+export function cfStore(cfg, fetchFn = globalThis.fetch) {
+  const request = async (path, init = {}) => {
+    const r = await call(cfg, `${nsUrl(cfg)}${path}`, { headers: {}, ...init }, fetchFn);
+    if (!r.ok) {
+      const err = new Error(r.message);
+      err.status = r.status;
+      err.code = r.code;
+      throw err;
+    }
+    return r.res;
+  };
+  const jsonInit = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const chunks = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, (i + 1) * n));
+
+  return {
+    // The value as text, or null when the key doesn't exist.
+    async get(key) {
+      try {
+        return await (await request(`/values/${encodeURIComponent(key)}`, { method: "GET" })).text();
+      } catch (err) {
+        if (err.status === 404 && err.code === KEY_NOT_FOUND) return null;
+        throw err;
+      }
+    },
+
+    // Every key name with the prefix, across pages.
+    async list(prefix) {
+      const names = [];
+      let cursor = "";
+      do {
+        const q = `?prefix=${encodeURIComponent(prefix)}&limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+        const body = await (await request(`/keys${q}`, { method: "GET" })).json();
+        names.push(...(body.result || []).map((k) => k.name));
+        cursor = body.result_info?.cursor || "";
+      } while (cursor);
+      return names;
+    },
+
+    // {key: text} for the keys that exist.
+    async getMany(keys) {
+      const out = {};
+      for (const group of chunks(keys, BULK_GET_MAX)) {
+        const body = await (await request("/bulk/get", jsonInit("POST", { keys: group, type: "text" }))).json();
+        for (const [k, v] of Object.entries(body.result?.values || {})) if (typeof v === "string") out[k] = v;
+      }
+      return out;
+    },
+
+    // items: [{key, value}]. Throws if Cloudflare reports any key as not written.
+    async putMany(items) {
+      for (const group of chunks(items, BULK_PUT_MAX)) {
+        const body = await (await request("/bulk", jsonInit("PUT", group.map(({ key, value }) => ({ key, value }))))).json();
+        const failed = body.result?.unsuccessful_keys || [];
+        if (failed.length) throw new Error(`Cloudflare did not write ${failed.length} of ${group.length} entries. Try Sync now again.`);
+      }
+    },
+  };
 }
 
 export async function blockAlias(cfg, alias, fetchFn = globalThis.fetch) {

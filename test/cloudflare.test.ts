@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { blockAlias, blockKey, hasPermission, isConfigured, PERMISSION_ERROR, requestPermission, testConnection, TOKEN_ERROR, unblockAlias } from "../src/lib/cloudflare.js";
+import { blockAlias, blockKey, cfStore, hasPermission, isConfigured, PERMISSION_ERROR, requestPermission, testConnection, TOKEN_ERROR, unblockAlias } from "../src/lib/cloudflare.js";
 import { setAliasBlocked } from "../src/lib/blocklist.js";
 import { DEFAULTS, validateSettings } from "../src/lib/settings.js";
 import { exportRegistry } from "../src/lib/registry.js";
@@ -140,5 +140,78 @@ describe("settings and secrecy", () => {
   test("settings never carry a token field", () => {
     expect(Object.keys(validateSettings({ ...DEFAULTS, cfToken: TOKEN }).value)).not.toContain("cfToken");
     expect(exportRegistry([], undefined, {})).not.toContain("cfToken");
+  });
+});
+
+describe("cfStore (sync KV access)", () => {
+  const base = `https://api.cloudflare.com/client/v4/accounts/${ACC}/storage/kv/namespaces/${NS}`;
+  const json = (body: unknown, status = 200) => ({ ok: status < 300, status, json: async () => body, text: async () => JSON.stringify(body) }) as any;
+
+  function router(handlers: Record<string, (init: any, url: string) => any>) {
+    const calls: { url: string; init: any }[] = [];
+    const fn = async (url: string, init: any) => {
+      calls.push({ url, init });
+      for (const [prefix, h] of Object.entries(handlers)) if (url.startsWith(base + prefix)) return h(init, url);
+      throw new Error("unexpected " + url);
+    };
+    return { fn, calls };
+  }
+
+  test("get returns text, null for a missing key, and throws for other errors", async () => {
+    const f = router({ "/values/": (_i, url) => url.includes("missing")
+      ? json({ errors: [{ code: 10009, message: "key not found" }] }, 404)
+      : ({ ok: true, status: 200, text: async () => "blob" }) });
+    const s = cfStore(cfg, f.fn);
+    expect(await s.get("reg:abc")).toBe("blob");
+    expect(await s.get("missing")).toBeNull();
+    const bad = cfStore(cfg, fakeFetch(401, {}).fn);
+    await expect(bad.get("x")).rejects.toThrow(TOKEN_ERROR);
+  });
+
+  test("a 404 that is not 'key not found' is an error, not a missing key", async () => {
+    const s = cfStore(cfg, fakeFetch(404, { errors: [{ code: 10013, message: "namespace not found" }] }).fn);
+    await expect(s.get("x")).rejects.toThrow(/namespace ID/);
+  });
+
+  test("list follows the cursor and returns all names", async () => {
+    let n = 0;
+    const f = router({ "/keys": (_i, url) => {
+      n++;
+      return n === 1
+        ? json({ result: [{ name: "reg:a" }], result_info: { cursor: "CUR" } })
+        : json({ result: [{ name: "reg:b" }], result_info: { cursor: "" } });
+    } });
+    expect(await cfStore(cfg, f.fn).list("reg:")).toEqual(["reg:a", "reg:b"]);
+    expect(f.calls[0].url).toContain("prefix=reg%3A");
+    expect(f.calls[1].url).toContain("cursor=CUR");
+  });
+
+  test("getMany chunks at 100 keys and skips missing ones", async () => {
+    const f = router({ "/bulk/get": (init) => {
+      const keys: string[] = JSON.parse(init.body).keys;
+      return json({ result: { values: Object.fromEntries(keys.filter((k) => k !== "k5").map((k) => [k, "v-" + k])) } });
+    } });
+    const keys = Array.from({ length: 250 }, (_, i) => "k" + i);
+    const out = await cfStore(cfg, f.fn).getMany(keys);
+    expect(f.calls).toHaveLength(3);
+    expect(Object.keys(out)).toHaveLength(249);
+    expect(out.k5).toBeUndefined();
+    expect(JSON.parse(f.calls[0].init.body).type).toBe("text");
+  });
+
+  test("putMany sends one bulk PUT and fails loudly on unsuccessful keys", async () => {
+    const ok = router({ "/bulk": () => json({ result: { successful_key_count: 2, unsuccessful_keys: [] } }) });
+    await cfStore(cfg, ok.fn).putMany([{ key: "reg:a", value: "1" }, { key: "reg:b", value: "2" }]);
+    expect(ok.calls).toHaveLength(1);
+    expect(ok.calls[0].init.method).toBe("PUT");
+    expect(JSON.parse(ok.calls[0].init.body)).toEqual([{ key: "reg:a", value: "1" }, { key: "reg:b", value: "2" }]);
+    const bad = router({ "/bulk": () => json({ result: { successful_key_count: 1, unsuccessful_keys: ["reg:b"] } }) });
+    await expect(cfStore(cfg, bad.fn).putMany([{ key: "reg:a", value: "1" }, { key: "reg:b", value: "2" }])).rejects.toThrow(/did not write 1 of 2/);
+  });
+
+  test("errors never include the token", async () => {
+    const s = cfStore(cfg, fakeFetch(500, { errors: [{ code: 1, message: `oops ${TOKEN}` }] }).fn);
+    await expect(s.list("reg:")).rejects.toThrow();
+    try { await s.list("reg:"); } catch (e: any) { expect(e.message).not.toContain(TOKEN); }
   });
 });
