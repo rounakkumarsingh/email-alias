@@ -1,4 +1,4 @@
-import { blockKey, decide } from "./route.js";
+import { blockKey, decide, fixedKey, isOwnAddress } from "./route.js";
 
 // One generic message for every rejection, so a sender can't tell a blocked alias from one that never existed.
 export const REJECT_MESSAGE = "Address not accepted";
@@ -12,12 +12,6 @@ export async function handle(message, env, { log = console.log, now = () => new 
   const d = decide(message.to, env);
   const record = (action) => logEvent(log, now, { alias: d.alias, tag: d.tag, action });
 
-  if (d.action === "reject") {
-    message.setReject(REJECT_MESSAGE);
-    record("reject");
-    return;
-  }
-
   // Forward failures and missing config are not the sender's fault, so they must not be a permanent
   // reject: log and rethrow so the invocation fails and the sender can retry.
   const forward = async (headers, action) => {
@@ -30,6 +24,28 @@ export async function handle(message, env, { log = console.log, now = () => new 
       throw err;
     }
   };
+
+  if (d.action === "reject") {
+    // Fixed addresses pushed from the extension live in KV as fixed:<address>. Only a rejected address
+    // on our own domain is looked up, so valid tag.random aliases and foreign domains cost no extra read.
+    if (isOwnAddress(d.alias, env)) {
+      let isFixed = false;
+      let kvError = false;
+      try {
+        isFixed = (await env.BLOCKLIST.get(fixedKey(d.alias))) !== null;
+      } catch {
+        // Fail closed: never forward an address we could not confirm.
+        kvError = true;
+      }
+      if (isFixed) return forward(undefined, "forward");
+      message.setReject(REJECT_MESSAGE);
+      record(kvError ? "kv_error" : "reject");
+      return;
+    }
+    message.setReject(REJECT_MESSAGE);
+    record("reject");
+    return;
+  }
 
   if (d.action === "fixed") return forward(undefined, "forward");
 

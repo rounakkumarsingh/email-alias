@@ -1,6 +1,6 @@
 import { api } from "./browser.js";
 import { getCfToken, getSettings, removeAlias } from "./storage.js";
-import { blockAlias, hasPermission, isConfigured, PERMISSION_ERROR, unblockAlias } from "./cloudflare.js";
+import { blockAlias, hasPermission, isConfigured, PERMISSION_ERROR, syncFixed, unblockAlias } from "./cloudflare.js";
 
 async function defaultConfig() {
   const s = await getSettings();
@@ -20,6 +20,21 @@ export async function setAliasBlocked(alias, blocked, deps = {}) {
   }
   if (!(await permitted())) return { ok: false, message: PERMISSION_ERROR, synced: false };
   const r = await (blocked ? blockAlias : unblockAlias)(cfg, alias, deps.fetch);
+  return { ...r, synced: r.ok };
+}
+
+// Pushes the Fixed addresses setting to the Worker's KV. Returns {ok, message, synced}. With no
+// Cloudflare setup it succeeds with synced=false (the Worker then only knows FIXED from wrangler.toml).
+export async function pushFixed(fixed, deps = {}) {
+  const getConfig = deps.getConfig ?? defaultConfig;
+  const permitted = deps.hasPermission ?? (() => hasPermission(api));
+  const cfg = await getConfig();
+  if (!cfg.accountId && !cfg.namespaceId && !cfg.token) return { ok: true, message: "", synced: false };
+  if (!isConfigured(cfg)) {
+    return { ok: false, message: "Cloudflare blocklist is half set up. Fill in the account ID, namespace ID and token in settings.", synced: false };
+  }
+  if (!(await permitted())) return { ok: false, message: PERMISSION_ERROR, synced: false };
+  const r = await syncFixed(cfg, fixed, deps.fetch);
   return { ...r, synced: r.ok };
 }
 

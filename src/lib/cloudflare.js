@@ -105,7 +105,36 @@ export function cfStore(cfg, fetchFn = globalThis.fetch) {
         if (failed.length) throw new Error(`Cloudflare did not write ${failed.length} of ${group.length} entries. Try Sync now again.`);
       }
     },
+
+    // One DELETE per key (the long-documented endpoint). Deleting a missing key is not an error.
+    async deleteMany(keys) {
+      for (const key of keys) await request(`/values/${encodeURIComponent(key)}`, { method: "DELETE" });
+    },
   };
+}
+
+export const fixedKey = (address) => `fixed:${String(address).trim().toLowerCase()}`;
+const FIXED_PREFIX = "fixed:";
+
+// Makes the fixed:<address> keys in KV match `fixed` (the extension's Fixed addresses setting).
+// Writes only the difference, so an unchanged list costs reads only (the free plan allows 1,000 writes/day).
+// Returns {ok, message, put, deleted}; messages never contain the token.
+export async function syncFixed(cfg, fixed, fetchFn = globalThis.fetch) {
+  try {
+    const store = cfStore(cfg, fetchFn);
+    const wanted = new Set(fixed.map(fixedKey));
+    const remote = new Set(await store.list(FIXED_PREFIX));
+    const missing = [...wanted].filter((k) => !remote.has(k));
+    const extra = [...remote].filter((k) => !wanted.has(k));
+    if (!missing.length && !extra.length) {
+      return { ok: true, message: "Fixed addresses already up to date on Cloudflare.", put: 0, deleted: 0 };
+    }
+    if (missing.length) await store.putMany(missing.map((key) => ({ key, value: "1" })));
+    if (extra.length) await store.deleteMany(extra);
+    return { ok: true, message: "Fixed addresses updated on Cloudflare.", put: missing.length, deleted: extra.length };
+  } catch (err) {
+    return { ok: false, message: String(err?.message ?? err).split(cfg.token).join("***"), put: 0, deleted: 0 };
+  }
 }
 
 export async function blockAlias(cfg, alias, fetchFn = globalThis.fetch) {

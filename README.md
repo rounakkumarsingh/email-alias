@@ -77,19 +77,21 @@ A Worker in `worker/` sits behind your catch-all address and decides what happen
 
 | Recipient | Result |
 |---|---|
-| A fixed address (`FIXED` in `worker/wrangler.toml`), any case | Forwarded unchanged to your Proton address |
+| A fixed address: listed in `FIXED` in `worker/wrangler.toml`, or stored as a `fixed:<address>` key in the KV namespace, any case | Forwarded unchanged to your Proton address (blocklist not applied) |
 | `tag.random@domain` (tag `[a-z0-9-]{1,24}`, random `[a-z0-9]{5,12}`), any case | Forwarded with headers `X-Alias-Tag` and `X-Alias`, unless the alias is in the KV blocklist |
-| Blocked alias, malformed address, plus-addressing, unknown address | Rejected with the single message `Address not accepted` |
+| Blocked alias, malformed address, plus-addressing, unknown address (including a fixed address whose KV lookup fails) | Rejected with the single message `Address not accepted` |
 
 The Subject is **not** rewritten. Cloudflare's `forward()` can only add `X-` headers, and re-sending a modified copy would break the sender's DKIM/SPF/DMARC results, replace the From address and risk the free plan's 10 ms CPU limit. The Worker never reads message bodies or subjects and logs only `{ts, alias, tag, action}`.
 
 If `forward()` fails the Worker rethrows instead of rejecting, so the sender is not told "permanent failure". If the KV read fails it forwards anyway (action `kv_error`). A newly blocked alias can keep delivering for up to about a minute because KV is eventually consistent.
 
+**Fixed addresses.** `FIXED` in `worker/wrangler.toml` is a static seed/fallback that is checked first with no KV read. When the Cloudflare blocklist is configured, the extension's **Fixed addresses** setting controls the rest: saving settings (or clicking **Push fixed addresses now** next to the Cloudflare blocklist section) writes a plaintext `fixed:<address>` key for each address and deletes keys you removed. Only the difference is written, and nothing at all when the list is unchanged, to stay inside the free plan's 1,000 writes/day. The Worker looks up `fixed:<address>` only for a rejected address on your own `DOMAIN`; valid `tag.random` aliases cost no extra read. If that lookup fails, the address is rejected (action `kv_error`) rather than forwarded. A new fixed address can take up to about a minute to start working (KV is eventually consistent). `fixed:` keys are plaintext by design, like `blocked:`, and are not part of the encrypted sync data.
+
 ### Setup
 
 1. `bunx wrangler login` (you run this yourself).
 2. `bunx wrangler kv namespace create BLOCKLIST` and paste the printed `id` into `worker/wrangler.toml`.
-3. In `worker/wrangler.toml` set `DESTINATION` (your verified Proton address), `DOMAIN` and `FIXED`.
+3. In `worker/wrangler.toml` set `DESTINATION` (your verified Proton address), `DOMAIN` and `FIXED`. `FIXED` is now only a fallback: with the Cloudflare blocklist configured in the extension, its **Fixed addresses** setting is pushed to KV and controls which fixed addresses are accepted.
 4. Deploy with one command: `bun run deploy:worker`.
 
 ### Switch Email Routing to the Worker (dashboard)
@@ -172,7 +174,7 @@ The passphrase is never stored. The derived keys are kept only in `storage.sessi
 
 ### Wiping remote sync data
 
-Delete the `reg:`, `lbl:` and `sync:` keys (never `blocked:`), for example with `bunx wrangler kv key list --binding BLOCKLIST --remote -c worker/wrangler.toml` and `bunx wrangler kv bulk delete`. Then click *Turn off on this browser* on each browser.
+Delete the `reg:`, `lbl:` and `sync:` keys (never `blocked:` or `fixed:`), for example with `bunx wrangler kv key list --binding BLOCKLIST --remote -c worker/wrangler.toml` and `bunx wrangler kv bulk delete`. Then click *Turn off on this browser* on each browser.
 
 ## Bridge linker setup (optional)
 

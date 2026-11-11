@@ -28,3 +28,11 @@ export function decide(to, env) {
 }
 
 export const blockKey = (alias) => `blocked:${alias}`;
+export const fixedKey = (alias) => `fixed:${alias}`;
+
+// Does this (already lowercased) address have a local part and live on env.DOMAIN, with a KV to ask?
+export function isOwnAddress(alias, env) {
+  const domain = String(env.DOMAIN ?? "").trim().toLowerCase();
+  const at = alias.lastIndexOf("@");
+  return Boolean(domain && env.BLOCKLIST && at > 0 && alias.slice(at + 1) === domain);
+}

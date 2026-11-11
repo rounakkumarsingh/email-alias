@@ -3,7 +3,7 @@ import { validateSettings } from "../lib/settings.js";
 import { getCfToken, getLabels, getLinkerStatus, getRegistry, getSettings, saveLabels, saveRegistry, saveSettings, setCfToken, setLinkerStatus, syncedLabels } from "../lib/storage.js";
 import { api } from "../lib/browser.js";
 import { hasPermission, isConfigured, requestPermission, testConnection } from "../lib/cloudflare.js";
-import { blocklistConfigured, deleteAlias, setAliasBlocked } from "../lib/blocklist.js";
+import { blocklistConfigured, deleteAlias, pushFixed, setAliasBlocked } from "../lib/blocklist.js";
 import { disableSync, lock, runSync, syncStatus, unlock } from "../lib/syncrunner.js";
 import { CREATED, markCreated, mergeLabels, NEEDS, parseLabels, pendingTags, setLabelStatus, tagList } from "../lib/labels.js";
 import { switchLabelMode } from "../lib/modeswitch.js";
@@ -48,6 +48,11 @@ $("settings").addEventListener("submit", async (ev) => {
   await saveSettings(value);
   say("settings-status", "Settings saved.");
   await loadSettings();
+
+  // Mirror the fixed addresses to the Worker's KV. Local save has already succeeded, so a failure only warns.
+  const push = await pushFixed(value.fixed).catch((err) => ({ ok: false, message: String(err?.message ?? err), synced: false }));
+  if (push.synced) say("settings-status", `Settings saved. ${push.message}`);
+  else if (!push.ok) say("settings-status", `Settings saved locally, but Cloudflare was not updated: ${push.message}`, "err");
 
   // Switching to Bridge creates every label still marked "needs creating".
   const sw = await switchLabelMode({
@@ -305,6 +310,16 @@ $("cf-test").addEventListener("click", async () => {
   if (!isConfigured(test)) return say("cf-status", "Enter the account ID, namespace ID and token first.", "err");
   say("cf-status", "Testing...");
   const r = await testConnection(test);
+  say("cf-status", r.message, r.ok ? "ok" : "err");
+});
+
+$("cf-push-fixed").addEventListener("click", async () => {
+  const granted = await requestPermission(api);
+  await loadCf();
+  if (!granted) return say("cf-status", "Allow access to api.cloudflare.com to push fixed addresses.", "err");
+  if (!(await blocklistConfigured())) return say("cf-status", "Save the account ID, namespace ID and token first.", "err");
+  say("cf-status", "Pushing...");
+  const r = await pushFixed((await getSettings()).fixed);
   say("cf-status", r.message, r.ok ? "ok" : "err");
 });
 

@@ -4,7 +4,7 @@ import { LABEL_MODES } from "./labels.js";
 export const DEFAULTS = {
   domain: "rounakkumarsingh.com",
   length: 6,
-  fixed: ["hello@rounakkumarsingh.com", "rounak@rounakkumarsingh.com"],
+  fixed: ["hello@rounakkumarsingh.com", "rounak@rounakkumarsingh.com", "github@rounakkumarsingh.com"],
   categories: ["fin", "govt"],
   spamFolder: "Spam",
   labelMode: "manual",

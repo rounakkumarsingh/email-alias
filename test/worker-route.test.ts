@@ -165,3 +165,65 @@ describe("handle", () => {
     for (const l of r.logs) expect(Object.keys(l).sort()).toEqual(["action", "alias", "tag", "ts"]);
   });
 });
+
+describe("handle: fixed addresses stored in KV", () => {
+  const spy = (keys: string[] = []) => {
+    const gets: string[] = [];
+    return { gets, get: async (k: string) => { gets.push(k); return keys.includes(k) ? "1" : null; } };
+  };
+
+  test("KV fixed address is forwarded unchanged with no headers", async () => {
+    const BLOCKLIST = spy(["fixed:github@example.com"]);
+    const r = await run("GitHub@example.com", { ...ENV, BLOCKLIST });
+    expect(r.forward).toHaveLength(1);
+    expect(r.forward[0].headers).toBeUndefined();
+    expect(r.reject).toEqual([]);
+    expect(r.logs).toEqual([{ ts: "T", alias: "github@example.com", tag: null, action: "forward" }]);
+    expect(BLOCKLIST.gets).toEqual(["fixed:github@example.com"]);
+  });
+
+  test("a blocked: key does not stop a KV fixed address", async () => {
+    const BLOCKLIST = spy(["fixed:github@example.com", "blocked:github@example.com"]);
+    const r = await run("github@example.com", { ...ENV, BLOCKLIST });
+    expect(r.forward).toHaveLength(1);
+    expect(BLOCKLIST.gets).not.toContain("blocked:github@example.com");
+  });
+
+  test("unknown address with no KV key is rejected", async () => {
+    const BLOCKLIST = spy();
+    const r = await run("unknown@example.com", { ...ENV, BLOCKLIST });
+    expect(r.reject).toEqual([REJECT_MESSAGE]);
+    expect(r.forward).toEqual([]);
+    expect(r.logs[0].action).toBe("reject");
+    expect(BLOCKLIST.gets).toEqual(["fixed:unknown@example.com"]);
+  });
+
+  test("KV error on the fixed lookup rejects and logs kv_error", async () => {
+    const BLOCKLIST = { get: async () => { throw new Error("KV down"); } };
+    const r = await run("github@example.com", { ...ENV, BLOCKLIST });
+    expect(r.forward).toEqual([]);
+    expect(r.reject).toEqual([REJECT_MESSAGE]);
+    expect(r.logs).toEqual([{ ts: "T", alias: "github@example.com", tag: null, action: "kv_error" }]);
+  });
+
+  test("a valid alias does exactly one KV get (blocked check), no fixed lookup", async () => {
+    const BLOCKLIST = spy();
+    const r = await run("shop.abcde@example.com", { ...ENV, BLOCKLIST });
+    expect(r.forward).toHaveLength(1);
+    expect(BLOCKLIST.gets).toEqual(["blocked:shop.abcde@example.com"]);
+  });
+
+  test("an address on another domain never triggers a lookup", async () => {
+    const BLOCKLIST = spy(["fixed:github@other.com"]);
+    const r = await run("github@other.com", { ...ENV, BLOCKLIST });
+    expect(r.reject).toEqual([REJECT_MESSAGE]);
+    expect(BLOCKLIST.gets).toEqual([]);
+  });
+
+  test("env FIXED still works with no KV read", async () => {
+    const BLOCKLIST = spy();
+    const r = await run("hello@example.com", { ...ENV, BLOCKLIST });
+    expect(r.forward).toHaveLength(1);
+    expect(BLOCKLIST.gets).toEqual([]);
+  });
+});
